@@ -1,0 +1,32 @@
+{
+  "providers": {
+    "ollama": {
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "models": [
+        {
+          "_launch": true,
+          "contextWindow": 40960,
+          "id": "qwen3:14b",
+          "input": [
+            "text"
+          ],
+          "reasoning": true
+        }
+      ]
+    },
+    "openrouter": {
+      "models": [
+        {
+          "id": "openai/gpt-5.6-luna",
+          "name": "ChatGPT Luna 5.6",
+          "input": ["text", "image"],
+          "reasoning": true,
+          "contextWindow": 256000,
+          "maxTokens": 32000
+        }
+      ]
+    }
+  }
+}

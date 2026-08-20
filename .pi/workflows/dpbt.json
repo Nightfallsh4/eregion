@@ -1,0 +1,30 @@
+{
+  "name": "dpbt",
+  "workflow": "dpbt",
+  "variant": "design-review",
+  "runner": "dpbt",
+  "description": "Create an isolated, reviewable design mockup; explicitly approve it; then plan, build, and test against that design.",
+  "interactive": false,
+  "design": {
+    "agent": "designer",
+    "review": "static-local-preview-with-click-annotations",
+    "approval": "explicit"
+  },
+  "plan": {
+    "agent": "planner-simple",
+    "tools": ["read", "grep", "find", "ls", "bash", "write"],
+    "session": "ephemeral"
+  },
+  "build": {
+    "agent": "builder",
+    "tools": ["edit", "write", "read", "bash", "grep", "find", "ls"],
+    "session": "persistent"
+  },
+  "test": {
+    "agent": "tester",
+    "authorInParallel": true,
+    "verifyAfter": "builder-complete",
+    "session": "persistent"
+  },
+  "loop": { "maxIterations": 5, "plateauDetection": true }
+}

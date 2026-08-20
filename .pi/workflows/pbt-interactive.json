@@ -1,0 +1,35 @@
+{
+  "name": "pbt-interactive",
+  "workflow": "pbt",
+  "variant": "interactive",
+  "runner": "pbt",
+  "description": "Planner clarification rounds, parallel test authoring/build, and a persistent verification/fix loop",
+  "interactive": true,
+  "clarify": {
+    "enabled": true,
+    "timeout": 120000,
+    "mode": "planner-requested-rounds"
+  },
+  "plan": {
+    "agent": "planner-interactive",
+    "tools": ["read", "grep", "find", "ls", "bash", "write"],
+    "session": "persistent"
+  },
+  "build": {
+    "agent": "builder",
+    "tools": ["edit", "write", "read", "bash", "grep", "find", "ls"],
+    "session": "persistent"
+  },
+  "test": {
+    "agent": "tester",
+    "authoringTools": ["edit", "write", "read", "grep", "find", "ls", "bash"],
+    "verificationTools": ["bash", "read", "grep", "find", "ls"],
+    "session": "persistent",
+    "authorInParallel": true,
+    "verifyAfter": "builder-complete"
+  },
+  "loop": {
+    "maxIterations": 5,
+    "plateauDetection": true
+  }
+}

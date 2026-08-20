@@ -1,0 +1,31 @@
+{
+  "name": "dpbt-interactive",
+  "workflow": "dpbt",
+  "variant": "interactive",
+  "runner": "dpbt",
+  "description": "Ask focused product/design questions during design; then approve, plan, build, and test.",
+  "interactive": true,
+  "design": {
+    "agent": "designer",
+    "clarify": "designer-requested-rounds",
+    "review": "static-local-preview-with-click-annotations",
+    "approval": "explicit"
+  },
+  "plan": {
+    "agent": "planner-simple",
+    "tools": ["read", "grep", "find", "ls", "bash", "write"],
+    "session": "ephemeral"
+  },
+  "build": {
+    "agent": "builder",
+    "tools": ["edit", "write", "read", "bash", "grep", "find", "ls"],
+    "session": "persistent"
+  },
+  "test": {
+    "agent": "tester",
+    "authorInParallel": true,
+    "verifyAfter": "builder-complete",
+    "session": "persistent"
+  },
+  "loop": { "maxIterations": 5, "plateauDetection": true }
+}

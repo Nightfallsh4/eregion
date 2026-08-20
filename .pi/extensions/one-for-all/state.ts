@@ -1,0 +1,142 @@
+/**
+ * Run registry and state persistence: creates run IDs, saves/loads
+ * `state.json`, tracks in-process active runs, validates planner output paths,
+ * and summarizes/inspects runs.
+ */
+
+import { randomBytes } from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { LEGACY_RUNS_DIR, RUNS_DIR } from "./constants.js";
+import { formatProgressEvent, readProgress } from "./progress.js";
+import type { RunControl, WorkflowState } from "./types.js";
+import { ensureDirectory, isRecord } from "./util.js";
+
+export const activeRuns = new Map<string, RunControl>();
+
+// Older PBT versions stored runs below .pi/. Keep reading that location
+// so existing workflows remain visible and resumable after the storage layout
+// moved to acache/.
+const LEGACY_DOT_PI_RUNS_DIR = path.join(".pi", "pbt-flow-runs");
+
+function runRoots(cwd: string): string[] {
+	return [path.join(cwd, RUNS_DIR), path.join(cwd, LEGACY_RUNS_DIR), path.join(cwd, LEGACY_DOT_PI_RUNS_DIR)];
+}
+
+export function runDirectory(cwd: string, runId: string): string {
+	const roots = runRoots(cwd);
+	for (const root of roots) {
+		if (fs.existsSync(path.join(root, runId))) return path.join(root, runId);
+	}
+	return path.join(cwd, RUNS_DIR, runId);
+}
+
+function storageDirectory(cwd: string, runId: string): string {
+	return runDirectory(cwd, runId);
+}
+
+export function createRunId(): string {
+	return `run-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
+}
+
+export function stateFilePath(cwd: string, runId: string): string {
+	return path.join(storageDirectory(cwd, runId), "state.json");
+}
+
+export function saveState(cwd: string, state: WorkflowState, pi: ExtensionAPI, mirrorToSession = true): void {
+	const runDir = storageDirectory(cwd, state.runId);
+	ensureDirectory(runDir);
+	const target = path.join(runDir, "state.json");
+	const temporary = `${target}.tmp-${process.pid}`;
+	fs.writeFileSync(temporary, JSON.stringify(state, null, 2), "utf8");
+	fs.renameSync(temporary, target);
+	if (!mirrorToSession) return;
+	try {
+		pi.appendEntry("workflow-run", state);
+	} catch {
+		// Disk state is authoritative; an extension entry is a convenience for
+		// /resume and should not make a completed run fail.
+	}
+}
+
+export function loadState(cwd: string, runId: string): WorkflowState | null {
+	try {
+		const raw = fs.readFileSync(stateFilePath(cwd, runId), "utf8");
+		const parsed = JSON.parse(raw);
+		return isRecord(parsed) ? (parsed as unknown as WorkflowState) : null;
+	} catch {
+		return null;
+	}
+}
+
+export function listStates(cwd: string): WorkflowState[] {
+	const statesById = new Map<string, WorkflowState>();
+	for (const directory of runRoots(cwd)) {
+		if (!fs.existsSync(directory)) continue;
+		for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+			if (!entry.isDirectory() || statesById.has(entry.name)) continue;
+			const state = loadState(cwd, entry.name);
+			if (state) statesById.set(entry.name, state);
+		}
+	}
+	return [...statesById.values()].sort((a, b) => b.startedAt - a.startedAt);
+}
+
+export function assertPlanExists(cwd: string, planPath: string): void {
+	const absolute = path.resolve(cwd, planPath);
+	const relative = path.relative(cwd, absolute);
+	if (relative.startsWith("..") || path.isAbsolute(relative)) {
+		throw new Error(`Planner returned an unsafe plan path: ${planPath}`);
+	}
+	if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile() || fs.statSync(absolute).size === 0) {
+		throw new Error(`Planner did not write a non-empty plan to ${planPath}`);
+	}
+}
+
+export function summarizeState(state: WorkflowState): string {
+	const latest = state.handoffs.at(-1);
+	return [
+		`${state.runId} · ${state.status} · ${state.interactive ? "interactive" : "simple"}`,
+		`request: ${state.request}`,
+		`plan: ${state.planPath}`,
+		`iteration: ${state.iteration}/${state.maxIterations} (budget cycle ${state.iterationCycle || 0})`,
+		`stop: ${state.stopReason || "none"}`,
+		`issue ledger: ${state.issueLedger?.length ? state.issueLedger.map((entry) => `${entry.issue.id}=${entry.status}`).join(", ") : "none"}`,
+		`phase: ${state.phase || "unknown"}`,
+		`agents: ${Object.entries(state.agentStatuses || {})
+			.map(([agent, status]) => `${agent}=${status.status} (${status.phase})`)
+			.join(", ") || "none"}`,
+		latest ? `latest: ${latest.phase}${latest.testStage ? `/${latest.testStage}` : ""} — ${latest.summary}` : "latest: none",
+	].join("\n");
+}
+
+export function inspectState(state: WorkflowState, cwd: string, limit = 40): string {
+	const events = readProgress(cwd, state, limit);
+	return `${summarizeState(state)}\nactive: ${state.currentAgent || "none"}\nactivity: ${state.currentActivity || "none"}\nactivity log: ${state.activityLogPath || "none"}\nevents: ${state.eventCount || 0}\n\n${events.length ? events.map(formatProgressEvent).join("\n") : "(no activity recorded)"}`;
+}
+
+export function stateForArgument(cwd: string, runId: string | undefined): WorkflowState | null {
+	if (runId) return loadState(cwd, runId);
+	const active = [...activeRuns.values()].at(-1)?.state;
+	return active || listStates(cwd)[0] || null;
+}
+
+/** Return a persisted run that can be resumed, preferring the newest one. */
+export function resumableStateForArgument(cwd: string, runId?: string): WorkflowState | null {
+	const requested = runId ? loadState(cwd, runId) : null;
+	if (runId) return requested && isResumableState(requested) ? requested : null;
+	return listStates(cwd).find(isResumableState) || null;
+}
+
+export function isResumableState(state: WorkflowState): boolean {
+	return (
+		state.status === "running" ||
+		state.status === "awaiting-clarification" ||
+		state.status === "awaiting-design-review" ||
+		state.status === "failed" ||
+		state.status === "aborted" ||
+		state.status === "max-iterations-reached" ||
+		state.status === "plateau-reached"
+	);
+}

@@ -1,0 +1,7 @@
+{
+  "defaultModel": "openai/gpt-5.6-luna",
+  "defaultProvider": "openrouter",
+  "defaultThinkingLevel": "xhigh",
+  "theme": "lotr",
+  "hideThinkingBlock": true
+}
