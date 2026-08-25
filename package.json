@@ -11,8 +11,12 @@
     "extensions": [
       "./extensions/eregion/index.ts"
     ],
-    "skills": [],
-    "themes": []
+    "skills": [
+      "./skills"
+    ],
+    "themes": [
+      "./themes"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
