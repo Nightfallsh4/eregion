@@ -5,7 +5,7 @@
  * globally and a project also has local resources. Agents and workflow
  * definitions are resolved from this package, with project-local overrides.
  */
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { SettingsManager, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import oneForAll from "./one-for-all/index.js";
 import clarify from "./clarify/index.js";
 import openRouterDynamicModels from "./openrouter-dynamic-models/index.js";
@@ -33,4 +33,19 @@ export default function eregion(pi: ExtensionAPI): void {
 		skillPaths: missingSkillPaths(event.cwd),
 		themePaths: missingThemePaths(event.cwd),
 	}));
+
+	// Pi initializes the selected theme during interactive construction before
+	// resources_discover contributes package themes. If the selected theme is
+	// bundled here, Pi initially falls back to its default theme. Re-apply the
+	// user's configured theme after resource discovery has completed.
+	pi.on("session_start", (_event, ctx) => {
+		if (!ctx.hasUI) return;
+		setTimeout(() => {
+			const configuredTheme = SettingsManager.create(ctx.cwd).getTheme();
+			if (!configuredTheme) return;
+			const theme = ctx.ui.getTheme(configuredTheme);
+			if (theme) ctx.ui.setTheme(theme);
+		}, 0);
+	});
+}
 }
