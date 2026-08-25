@@ -12,7 +12,20 @@ From this repository:
 ./scripts/copy-to-project.sh /path/to/your/project
 ```
 
-Or copy the project resource directory directly:
+The helper is recommended because it handles both kinds of device:
+
+```bash
+./scripts/copy-to-project.sh /path/to/your/project
+```
+
+It always copies `.pi/`. It also checks the device's global Pi directories
+before copying the global snapshots:
+
+- if a global extension/theme/skill already exists, it is not duplicated;
+- if it is absent, a project-local copy is installed so the project still works.
+
+For a manual project-only copy (only appropriate when the target device already
+has the global resources), use:
 
 ```bash
 cp -a .pi /path/to/your/project/
@@ -26,13 +39,13 @@ The copied project will get:
 - global extensions/themes remain in `global-agent/` and are not duplicated in `.pi/`
 - `.pi/workflows/` — PBT and DPBT workflow definitions
 - `.pi/settings.json` — the current model, thinking level, theme, and display preferences
-- shared global skills are preserved in `global-agent/skills/` for reference;
-  they are not copied into `.agents/` because pi already discovers them from
-  `~/.agents/skills/`
+- `global-agent/skills/` — fallback copies of shared skills for devices that do
+  not have them under `~/.agents/skills/`
 
-Pi automatically discovers project resources from `.pi/`. The shared skills
-are machine-scoped and are discovered from `~/.agents/skills/`; keeping them out
-of the copied project prevents skill collision warnings.
+Pi automatically discovers project resources from `.pi/` and `.agents/`.
+The copy helper checks existing global resources before materializing fallback
+copies, preventing collisions on this device while keeping the configuration
+portable to devices without those global resources.
 
 ## Authentication and secrets
 
@@ -43,13 +56,11 @@ Credentials are intentionally **not** included:
 - `global-agent/models.json` contains provider configuration only; its API key
   values are environment-variable names or local-provider placeholders.
 
-The local `.pi/` directory deliberately contains only project-scoped resources.
-The shared skills snapshot is kept outside auto-discovery under
-`global-agent/skills/` for the same reason.
-Machine-scoped extensions (guardrails, plan-only mode, custom header, and the
-session default model) are kept in `global-agent/` and continue to load from
-`~/.pi/agent/`. They must not be copied into `.pi/extensions/`, because pi will
-load both scopes and register those extensions twice.
+The repository stores global-resource snapshots under `global-agent/`, outside
+Pi auto-discovery. The copy helper decides at install time whether each one
+should remain global-only or be materialized into the target project. This is
+important because Pi loads both global and project resources: copying a resource
+that already exists globally causes collisions.
 
 For OpenRouter, export the key in each shell where pi runs:
 
@@ -71,20 +82,17 @@ That script refuses to overwrite an existing `~/.pi/agent/models.json` unless
 ## Included global snapshot
 
 `global-agent/` preserves the current global Pi settings, custom model registry,
-global extensions, themes, and shared skills for reference or optional
-installation. The
-project-local `.pi/` copy is the recommended way to share this configuration
-between repositories. On a machine without the global snapshot, install the
-model registry with the provided script and copy global extensions/themes to
-`~/.pi/agent/` only after reviewing them.
+global extensions, themes, and shared skills. The project-local `.pi/` copy is
+the recommended shared configuration; use the copy helper so global resources
+are installed only when missing. On a machine without the global model
+registry, install it with the provided script.
 
 ## Generated files and maintenance
 
 Runtime state is deliberately not part of this snapshot. The `.gitignore`
 excludes Pi sessions, workflow caches, auth files, environment files, and
-local package installs. If the source setup changes, recopy the relevant `.pi/` directory and review
-the diff. Do not copy `global-agent/skills/` into a project's `.agents/skills/`
-directory: those skills are intentionally machine-scoped.
+local package installs. If the source setup changes, rerun the copy helper and review the diff. It is
+safe to rerun: it does not duplicate resources that already exist globally.
 
 Extensions execute with full system access. Review changes before copying this
 configuration into a project.
