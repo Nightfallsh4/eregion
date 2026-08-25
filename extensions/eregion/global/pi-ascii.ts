@@ -4,9 +4,13 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
 
-    ctx.ui.setHeader((_tui, theme) => {
-      const a = (text: string) => theme.fg("accent", text);
-      const d = (text: string) => theme.fg("dim", text);
+    ctx.ui.setHeader(() => {
+      // Read the current theme inside render(). Pi may create the header before
+      // package-provided themes are registered during resources_discover; a
+      // theme captured by the factory would leave the ASCII art using the
+      // startup fallback color until the user manually changes themes.
+      const a = (text: string) => ctx.ui.theme.fg("accent", text);
+      const d = (text: string) => ctx.ui.theme.fg("dim", text);
 
       const artLines = [
         `███████╗██████╗  ███████╗ ██████╗ ██╗ ██████╗ ███╗   ██╗`,
