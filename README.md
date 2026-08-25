@@ -21,9 +21,9 @@ cp -a .pi .agents /path/to/your/project/
 The copied project will get:
 
 - `.pi/agents/` — planner, builder, tester, and designer roles
-- `.pi/extensions/` — guardrails, plan-only mode, custom header, live OpenRouter models, clarification, and PBT/DPBT workflow support
+- `.pi/extensions/` — live OpenRouter models, clarification, and PBT/DPBT workflow support
 - `.pi/skills/pbt/` — local PBT workflow instructions
-- `.pi/themes/` — `lotr` and `retro-gaming-blue`
+- global extensions/themes remain in `global-agent/` and are not duplicated in `.pi/`
 - `.pi/workflows/` — PBT and DPBT workflow definitions
 - `.pi/settings.json` — the current model, thinking level, theme, and display preferences
 - `.agents/skills/` — shared UI/UX, security, wallet, and related skills
@@ -39,6 +39,12 @@ Credentials are intentionally **not** included:
 - API keys and `.env` files were excluded.
 - `global-agent/models.json` contains provider configuration only; its API key
   values are environment-variable names or local-provider placeholders.
+
+The local `.pi/` directory deliberately contains only project-scoped resources.
+Machine-scoped extensions (guardrails, plan-only mode, custom header, and the
+session default model) are kept in `global-agent/` and continue to load from
+`~/.pi/agent/`. They must not be copied into `.pi/extensions/`, because pi will
+load both scopes and register those extensions twice.
 
 For OpenRouter, export the key in each shell where pi runs:
 

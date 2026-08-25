@@ -7,7 +7,9 @@ uses project-relative paths and environment-variable-based authentication.
 Included source groups:
 
 - project `.pi/agents`, `.pi/extensions`, `.pi/skills`, and `.pi/workflows`
-- global Pi extensions and themes
+- global Pi extensions and themes, stored only under `global-agent/` to avoid
+  duplicate registration when the repository is used with an existing global
+  Pi installation
 - shared `.agents/skills`
 - custom model registry in `global-agent/models.json`
 
