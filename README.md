@@ -100,12 +100,65 @@ Install the optional custom model registry snapshot with:
 
 The script protects an existing `models.json` unless `--force` is supplied.
 
-## Development
+## Development while using the package
 
-After changing the package, test it without installing:
+Use an editable local install on the device where you are developing. This
+makes pi load the package directly from your working tree, so you can edit the
+repository and use the changes immediately after `/reload` or a new pi session.
+
+If the GitHub copy is currently installed, remove it first. Do not leave both
+sources installed because pi will load both package entrypoints:
 
 ```bash
-pi -e .
+pi remove git:github.com/Nightfallsh4/eregion
+pi install /home/nightfallsh4/Programming/Learning/eregion
+```
+
+The local package source is recorded in `~/.pi/agent/settings.json` and is
+shared across projects. Check it with:
+
+```bash
+pi list
+```
+
+Then work normally in any project:
+
+```bash
+cd /path/to/project
+pi
+# edit eregion in another terminal
+# use /reload in pi, or restart pi, to load the change
+```
+
+After changing the package, run a temporary smoke test from the repository:
+
+```bash
+cd /home/nightfallsh4/Programming/Learning/eregion
+PI_OFFLINE=1 pi -e . --list-models
+```
+
+`pi -e .` is useful for a one-off test, but do not use it while the same
+package is already installed globally unless you intentionally isolate the
+Pi config; otherwise the global and temporary package can both load.
+
+For a completely isolated test with no installed packages:
+
+```bash
+PI_CODING_AGENT_DIR="$(mktemp -d)" PI_OFFLINE=1 pi -e . --list-models
+```
+
+When development is complete:
+
+```bash
+git add .
+git commit -m "Describe the change"
+git push origin main
+```
+
+Devices using the GitHub installation can then update with:
+
+```bash
+pi update git:github.com/Nightfallsh4/eregion
 ```
 
 The package uses only pi-provided peer dependencies. Extensions execute with
