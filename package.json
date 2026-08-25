@@ -1,0 +1,20 @@
+{
+  "name": "eregion",
+  "version": "0.2.0",
+  "description": "Portable pi coding workflow package with collision-safe PBT/DPBT, guardrails, plan-only mode, OpenRouter models, themes, and skills.",
+  "keywords": [
+    "pi-package"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./extensions/eregion/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "typebox": "*"
+  }
+}

@@ -46,6 +46,7 @@ import type { AgentResult, IssueLedgerEntry, PhaseHandoff, ProgressEvent, RunCon
 import { ensureDirectory } from "./util.js";
 import { askClarifications, updateUI } from "./ui.js";
 import { attachDesignReviewAssets, ensureDesignPreviewServer, initializeDesignReview, openDesignPreview, readApproval, readDesignFeedback, readReviewAction, resetReviewRequest } from "./design-review.js";
+import { projectAgentPath } from "../package-paths.js";
 
 export async function runWorkflow(
 	pi: ExtensionAPI,
@@ -226,7 +227,7 @@ export async function runWorkflow(
 	const authorTests = async (task: string, activity: string): Promise<{ result: AgentResult; handoff: PhaseHandoff }> => {
 		const run = async (authoringTask: string) => runSubagent({
 			cwd,
-			agentPath: path.join(cwd, ".pi", "agents", "tester.md"),
+			agentPath: projectAgentPath(cwd, "tester.md"),
 			model: subagentModel,
 			task: authoringTask,
 			// Keep bash available when the persistent tester process is first
@@ -292,7 +293,7 @@ export async function runWorkflow(
 					state.status = "running";
 					saveState(cwd, state, pi);
 					const task = buildDesignTask(request, state.design.previewDir, state.answers, Boolean(designInteractive), state.design.revision, newFeedback.length ? JSON.stringify(newFeedback) : undefined);
-					const result = await runSubagent({ cwd, agentPath: path.join(cwd, ".pi", "agents", "designer.md"), model: subagentModel, task, tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "design.jsonl"), signal: controller.signal, tui: tui("designer", "dpbt design"), onOutput: (output) => updateUI(ctx, state, output), ...progress("designer", `design-${state.design.revision + 1}`) });
+					const result = await runSubagent({ cwd, agentPath: projectAgentPath(cwd, "designer.md"), model: subagentModel, task, tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "design.jsonl"), signal: controller.signal, tui: tui("designer", "dpbt design"), onOutput: (output) => updateUI(ctx, state, output), ...progress("designer", `design-${state.design.revision + 1}`) });
 					const clarification = parseClarificationRequest(result.output, "design");
 					if (designInteractive && state.design.revision === 0 && state.answers.length === 0 && !clarification) {
 						throw new Error("Interactive design discovery must ask clarification questions before creating the mockup");
@@ -350,7 +351,7 @@ export async function runWorkflow(
 		// reuses planner.jsonl for every clarification round. On resume, the
 		// persisted plan handoff is sufficient and the planner is not rerun.
 		if (!planHandoff) {
-		const plannerPath = path.join(cwd, ".pi", "agents", planInteractive ? "planner-interactive.md" : "planner-simple.md");
+		const plannerPath = projectAgentPath(cwd, planInteractive ? "planner-interactive.md" : "planner-simple.md");
 		while (true) {
 			if (controller.signal.aborted) throw new Error("Workflow aborted");
 			state.phase = "plan";
@@ -427,7 +428,7 @@ export async function runWorkflow(
 					const authorTask = buildTestAuthoringTask(request, planPath, planHandoff, state.iteration, false) + (state.design?.approvedAt ? `\n\nApproved design reference: ${state.design.decisionPath}\nTest the approved user-facing behavior; the preview itself is not application code.` : "");
 					const parallelResults = await Promise.allSettled([
 						runSubagent({
-							cwd, agentPath: path.join(cwd, ".pi", "agents", "builder.md"), model: subagentModel,
+							cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: subagentModel,
 							task: buildTask, tools: ["edit", "write", "read", "bash", "grep", "find", "ls"],
 							sessionPath: path.join(runDir, "build.jsonl"), signal: controller.signal, tui: tui("builder", "pbt build"),
 							onOutput: (output) => updateUI(ctx, state, output), ...progress("builder", `build-${state.iteration}`),
@@ -446,7 +447,7 @@ export async function runWorkflow(
 					updateUI(ctx, state, authored.result.output);
 				} else if (!existingBuildHandoff) {
 					buildResult = await runSubagent({
-						cwd, agentPath: path.join(cwd, ".pi", "agents", "builder.md"), model: subagentModel,
+						cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: subagentModel,
 						task: buildTask, tools: ["edit", "write", "read", "bash", "grep", "find", "ls"],
 						sessionPath: path.join(runDir, "build.jsonl"), signal: controller.signal, tui: tui("builder", "pbt build"),
 						onOutput: (output) => updateUI(ctx, state, output), ...progress("builder", `build-${state.iteration}`),
@@ -502,7 +503,7 @@ export async function runWorkflow(
 						// one at a time. Ownership is diagnostic metadata, not a second
 						// prompt route; this keeps the fix barrier deterministic.
 						let fixResult = await runSubagent({
-							cwd, agentPath: path.join(cwd, ".pi", "agents", "builder.md"), model: subagentModel,
+							cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: subagentModel,
 							task: buildIssueFixTask(entry.issue, state.iteration),
 							tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "build.jsonl"),
 							signal: controller.signal, tui: tui("builder", "pbt build"), onOutput: (output) => updateUI(ctx, state, output),
@@ -520,7 +521,7 @@ export async function runWorkflow(
 							// continuation with explicit fix-turn authorization before
 							// failing the run. No other issue is exposed.
 							fixResult = await runSubagent({
-								cwd, agentPath: path.join(cwd, ".pi", "agents", "builder.md"), model: subagentModel,
+								cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: subagentModel,
 								task: buildIssueFixRetryTask(entry.issue, state.iteration),
 								tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "build.jsonl"),
 								signal: controller.signal, tui: tui("builder", "pbt build"), onOutput: (output) => updateUI(ctx, state, output),
@@ -549,7 +550,7 @@ export async function runWorkflow(
 					const remaining = issueLedger.filter((entry) => entry.status !== "fixed" && entry.issue.owner !== "environment");
 					if (remaining.length > 0) throw new Error("Issue ledger still contains unresolved non-environment issues; cannot complete handoff");
 					const completionResult = await runSubagent({
-						cwd, agentPath: path.join(cwd, ".pi", "agents", "builder.md"), model: subagentModel,
+						cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: subagentModel,
 						task: buildCompletionTask(issueLedger, state.iteration),
 						tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "build.jsonl"),
 						signal: controller.signal, tui: tui("builder", "pbt build"), onOutput: (output) => updateUI(ctx, state, output),
@@ -571,7 +572,7 @@ export async function runWorkflow(
 			state.phase = "test verification";
 			const testResult = await runSubagent({
 				cwd,
-				agentPath: path.join(cwd, ".pi", "agents", "tester.md"),
+				agentPath: projectAgentPath(cwd, "tester.md"),
 				model: subagentModel,
 				task: buildTestVerificationTask(
 					request,

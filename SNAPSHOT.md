@@ -1,18 +1,16 @@
 # Snapshot provenance
 
-Captured on 2026-08-20 from the active pi setup in `pi-playground` and the
-user-level Pi resources. This file is documentation only; the runtime config
-uses project-relative paths and environment-variable-based authentication.
+Captured from the active pi setup in `pi-playground` and the user-level Pi
+resources. Runtime secrets and state are intentionally excluded.
 
-Included source groups:
+The repository is structured as an installable pi package rather than a raw
+copy of `~/.pi/agent`:
 
-- project `.pi/agents`, `.pi/extensions`, `.pi/skills`, and `.pi/workflows`
-- global Pi extensions and themes, stored only under `global-agent/` to avoid
-  duplicate registration when the repository is used with an existing global
-  Pi installation
-- shared global skills from `~/.agents/skills`, stored only under
-  `global-agent/skills/` to avoid collisions with the global discovery path
-- custom model registry in `global-agent/models.json`
+- project workflow agents, workflows, and skills are package resources;
+- all extensions are loaded through one package entrypoint;
+- global-style extensions are conditionally loaded only when an equivalent is
+  not already present;
+- skills and themes are contributed conditionally through `resources_discover`.
 
-Excluded intentionally: credentials, sessions, caches, `.env` files, databases,
-`node_modules`, and other project runtime artifacts.
+This layout avoids resource collisions while remaining portable to devices that
+do not already have the original global setup.

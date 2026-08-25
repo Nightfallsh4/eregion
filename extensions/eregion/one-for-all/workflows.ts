@@ -8,6 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isRecord, asString, asNumber } from "./util.js";
+import { projectWorkflowsPath } from "../package-paths.js";
 
 export interface WorkflowDefinition {
 	/** Public name used by /flow and workflow_start. */
@@ -83,7 +84,7 @@ function definitionFromJson(value: unknown, configPath: string): WorkflowDefinit
 }
 
 export function loadWorkflowDefinitions(cwd: string): WorkflowDefinition[] {
-	const directory = path.join(cwd, ".pi", "workflows");
+	const directory = projectWorkflowsPath(cwd);
 	const definitions: WorkflowDefinition[] = [];
 	try {
 		for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {

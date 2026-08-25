@@ -1,98 +1,112 @@
-# eregion — reusable pi configuration
+# eregion — portable pi package
 
-This repository is a portable snapshot of the current pi setup used in
-`pi-playground`. It is intended to be copied into another project, not to be
-installed as a global replacement for your whole `~/.pi` directory.
+`eregion` is a shareable [pi package](https://pi.dev) containing the current
+coding workflow configuration. It can be pushed to GitHub, installed on many
+devices, and updated through pi's package manager.
 
-## Copy into another project
+## Install from GitHub
 
-From this repository:
-
-```bash
-./scripts/copy-to-project.sh /path/to/your/project
-```
-
-The helper is recommended because it handles both kinds of device:
+Replace the URL with the GitHub repository URL after pushing this repository:
 
 ```bash
-./scripts/copy-to-project.sh /path/to/your/project
+pi install git:github.com/YOUR_GITHUB_USER/eregion
 ```
 
-It always copies `.pi/`. It also checks the device's global Pi directories
-before copying the global snapshots:
-
-- if a global extension/theme/skill already exists, it is not duplicated;
-- if it is absent, a project-local copy is installed so the project still works.
-
-For a manual project-only copy (only appropriate when the target device already
-has the global resources), use:
+Or use an HTTPS URL:
 
 ```bash
-cp -a .pi /path/to/your/project/
+pi install https://github.com/YOUR_GITHUB_USER/eregion
 ```
 
-The copied project will get:
+For a pinned release/tag:
 
-- `.pi/agents/` — planner, builder, tester, and designer roles
-- `.pi/extensions/` — live OpenRouter models, clarification, and PBT/DPBT workflow support
-- `.pi/skills/pbt/` — local PBT workflow instructions
-- global extensions/themes remain in `global-agent/` and are not duplicated in `.pi/`
-- `.pi/workflows/` — PBT and DPBT workflow definitions
-- `.pi/settings.json` — the current model, thinking level, theme, and display preferences
-- `global-agent/skills/` — fallback copies of shared skills for devices that do
-  not have them under `~/.agents/skills/`
+```bash
+pi install git:github.com/YOUR_GITHUB_USER/eregion@v0.1.0
+```
 
-Pi automatically discovers project resources from `.pi/` and `.agents/`.
-The copy helper checks existing global resources before materializing fallback
-copies, preventing collisions on this device while keeping the configuration
-portable to devices without those global resources.
+Pi installs the package globally by default, so its extensions, skills, themes,
+and workflows are available across projects. Update later with:
 
-## Authentication and secrets
+```bash
+pi update git:github.com/YOUR_GITHUB_USER/eregion
+# or update all installed packages
+pi update
+```
 
-Credentials are intentionally **not** included:
+Try the local checkout without installing it permanently:
 
-- `~/.pi/agent/auth.json` is private machine state and was excluded.
-- API keys and `.env` files were excluded.
-- `global-agent/models.json` contains provider configuration only; its API key
-  values are environment-variable names or local-provider placeholders.
+```bash
+pi -e /path/to/eregion
+```
 
-The repository stores global-resource snapshots under `global-agent/`, outside
-Pi auto-discovery. The copy helper decides at install time whether each one
-should remain global-only or be materialized into the target project. This is
-important because Pi loads both global and project resources: copying a resource
-that already exists globally causes collisions.
+## Included resources
 
-For OpenRouter, export the key in each shell where pi runs:
+- `extensions/eregion/index.ts` — one package entrypoint that loads the
+  one-for-all workflow, clarification, OpenRouter dynamic models, guardrails,
+  plan-only mode, custom header, and session default model behavior
+- `agents/` — planner, builder, tester, and designer prompts used by PBT/DPBT
+- `workflows/` — PBT and DPBT workflow definitions
+- `skills/` — PBT plus the shared UI/UX, security, wallet, and related skills
+- `themes/` — LOTR and retro gaming themes
+- `config/models.json` — optional custom model registry snapshot
+
+The package resolves its bundled agents and workflow definitions from its own
+installed location, so it works even when the consuming project has no `.pi/`
+configuration. A project can still override agents/workflows by creating
+`.pi/agents/` or `.pi/workflows/` files.
+
+## Avoiding collisions
+
+Pi loads resources from global and project scopes. The package therefore uses a
+single extension entrypoint rather than exposing each extension file separately.
+It conditionally loads the global-style extensions only when an equivalent
+extension is not already present in `~/.pi/agent/extensions/` or the current
+project. This prevents duplicate commands, tools, flags, hooks, or headers on
+devices that already have the old global setup.
+
+Skills and themes are contributed through `resources_discover`, one resource at
+a time, and only when an equivalent resource is not already available in the
+project or global locations. Existing global skills will not collide with the
+package's bundled fallback skills.
+
+If you have old manually copied project resources from an earlier version,
+remove the duplicate copies before installing the package:
+
+```bash
+rm -rf .agents/skills .pi/extensions/guardrails .pi/extensions/pi-ascii.ts \
+  .pi/extensions/plan-only.ts .pi/extensions/session-default-model.ts
+```
+
+Do not install the package both globally and as a project-local `.pi` copy.
+Use the package install once globally, or use `pi install -l` only if you
+specifically need project-local installation. If an older project contains a
+copy of one of the package extensions, remove it before using the global
+package; the entrypoint also avoids registering a duplicate when it detects one.
+
+## Authentication
+
+Secrets are not stored in this repository. Configure providers with `/login`
+or environment variables, for example:
 
 ```bash
 export OPENROUTER_API_KEY="..."
 ```
 
-The OpenRouter dynamic-model extension refreshes the model list when the model
-selector opens. For a local Ollama model, install the optional model registry
-snapshot into your global pi config:
+Install the optional custom model registry snapshot with:
 
 ```bash
 ./scripts/install-global-models.sh
 ```
 
-That script refuses to overwrite an existing `~/.pi/agent/models.json` unless
-`--force` is supplied.
+The script protects an existing `models.json` unless `--force` is supplied.
 
-## Included global snapshot
+## Development
 
-`global-agent/` preserves the current global Pi settings, custom model registry,
-global extensions, themes, and shared skills. The project-local `.pi/` copy is
-the recommended shared configuration; use the copy helper so global resources
-are installed only when missing. On a machine without the global model
-registry, install it with the provided script.
+After changing the package, test it without installing:
 
-## Generated files and maintenance
+```bash
+pi -e .
+```
 
-Runtime state is deliberately not part of this snapshot. The `.gitignore`
-excludes Pi sessions, workflow caches, auth files, environment files, and
-local package installs. If the source setup changes, rerun the copy helper and review the diff. It is
-safe to rerun: it does not duplicate resources that already exist globally.
-
-Extensions execute with full system access. Review changes before copying this
-configuration into a project.
+The package uses only pi-provided peer dependencies. Extensions execute with
+full system access; review code before installing a GitHub copy.

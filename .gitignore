@@ -1,4 +1,3 @@
-# Secrets and local credentials
 .env
 .env.*
 !.env.example
@@ -7,17 +6,9 @@
 **/credentials.json
 **/secrets
 **/secrets.json
-
-# Pi runtime state
-.pi/sessions/
-.pi/npm/
-.pi/git/
+.pi/
 acache/
 **/acache/
-
-# Local package/dependency output
 node_modules/
-
-# Editor and OS files
 .DS_Store
 *.swp
