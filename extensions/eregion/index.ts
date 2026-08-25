@@ -5,7 +5,7 @@
  * globally and a project also has local resources. Agents and workflow
  * definitions are resolved from this package, with project-local overrides.
  */
-import { SettingsManager, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import oneForAll from "./one-for-all/index.js";
 import clarify from "./clarify/index.js";
 import openRouterDynamicModels from "./openrouter-dynamic-models/index.js";
