@@ -4,11 +4,5 @@
   "defaultThinkingLevel": "xhigh",
   "lastChangelogVersion": "0.73.1",
   "theme": "lotr",
-  "hideThinkingBlock": true,
-  "extensions": [
-    "extensions"
-  ],
-  "themes": [
-    "themes"
-  ]
+  "hideThinkingBlock": true
 }

@@ -68,7 +68,9 @@ That script refuses to overwrite an existing `~/.pi/agent/models.json` unless
 `global-agent/` preserves the current global Pi settings, custom model registry,
 global extensions, and themes for reference or optional installation. The
 project-local `.pi/` copy is the recommended way to share this configuration
-between repositories.
+between repositories. On a machine without the global snapshot, install the
+model registry with the provided script and copy global extensions/themes to
+`~/.pi/agent/` only after reviewing them.
 
 ## Generated files and maintenance
 
