@@ -21,6 +21,10 @@ function globalAgentDir(): string {
 	return process.env.PI_CODING_AGENT_DIR || path.join(process.env.HOME || process.cwd(), ".pi", "agent");
 }
 
+function globalSkillsDir(): string {
+	return path.join(process.env.HOME || process.cwd(), ".agents", "skills");
+}
+
 function globalExtensionExists(name: string): boolean {
 	const globalRoot = globalAgentDir();
 	return (GLOBAL_EXTENSION_FILES[name] || []).some((relative) => exists(path.join(globalRoot, relative)));
@@ -61,7 +65,7 @@ function skillExistsInTree(cwd: string, skillName: string): boolean {
 	}
 	const agentDir = globalAgentDir();
 	return exists(path.join(agentDir, "skills", skillName, "SKILL.md"))
-		|| exists(path.join(process.env.HOME || "", ".agents", "skills", skillName, "SKILL.md"));
+		|| exists(path.join(globalSkillsDir(), skillName, "SKILL.md"));
 }
 
 /**

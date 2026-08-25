@@ -2,8 +2,8 @@
  * eregion package entrypoint.
  *
  * A single package entrypoint prevents collisions when the package is installed
- * globally and a project also has local resources. Project resources (agents,
- * workflows, and the PBT skill) are copied separately by the install helper.
+ * globally and a project also has local resources. Agents and workflow
+ * definitions are resolved from this package, with project-local overrides.
  */
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import oneForAll from "./one-for-all/index.js";
@@ -29,8 +29,8 @@ export default function eregion(pi: ExtensionAPI): void {
 	if (missing.has("plan-only")) planOnly(pi);
 	if (missing.has("session-default-model")) sessionDefaultModel(pi);
 
-	pi.on("resources_discover", () => ({
-		skillPaths: missingSkillPaths(process.cwd()),
-		themePaths: missingThemePaths(process.cwd()),
+	pi.on("resources_discover", (event) => ({
+		skillPaths: missingSkillPaths(event.cwd),
+		themePaths: missingThemePaths(event.cwd),
 	}));
 }
