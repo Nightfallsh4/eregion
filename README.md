@@ -26,10 +26,13 @@ The copied project will get:
 - global extensions/themes remain in `global-agent/` and are not duplicated in `.pi/`
 - `.pi/workflows/` — PBT and DPBT workflow definitions
 - `.pi/settings.json` — the current model, thinking level, theme, and display preferences
-- `.agents/skills/` — shared UI/UX, security, wallet, and related skills
+- shared global skills are preserved in `global-agent/skills/` for reference;
+  they are not copied into `.agents/` because pi already discovers them from
+  `~/.agents/skills/`
 
-Pi automatically discovers project resources from `.pi/` and `.agents/`, so no
-path changes are needed after copying them into a project.
+Pi automatically discovers project resources from `.pi/`. The shared skills
+are machine-scoped and are discovered from `~/.agents/skills/`; keeping them out
+of the copied project prevents skill collision warnings.
 
 ## Authentication and secrets
 
@@ -41,6 +44,8 @@ Credentials are intentionally **not** included:
   values are environment-variable names or local-provider placeholders.
 
 The local `.pi/` directory deliberately contains only project-scoped resources.
+The shared skills snapshot is kept outside auto-discovery under
+`global-agent/skills/` for the same reason.
 Machine-scoped extensions (guardrails, plan-only mode, custom header, and the
 session default model) are kept in `global-agent/` and continue to load from
 `~/.pi/agent/`. They must not be copied into `.pi/extensions/`, because pi will
@@ -66,7 +71,8 @@ That script refuses to overwrite an existing `~/.pi/agent/models.json` unless
 ## Included global snapshot
 
 `global-agent/` preserves the current global Pi settings, custom model registry,
-global extensions, and themes for reference or optional installation. The
+global extensions, themes, and shared skills for reference or optional
+installation. The
 project-local `.pi/` copy is the recommended way to share this configuration
 between repositories. On a machine without the global snapshot, install the
 model registry with the provided script and copy global extensions/themes to

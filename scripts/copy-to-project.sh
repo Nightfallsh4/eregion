@@ -11,10 +11,10 @@ fi
 
 TARGET="$(mkdir -p -- "$TARGET" && cd -- "$TARGET" && pwd)"
 
-# cp -a preserves hidden files and keeps existing project files intact. Existing
-# files in .pi/.agents are intentionally replaced by this snapshot.
+# cp -a preserves hidden files and keeps existing project files intact.
+# Only .pi is copied: shared skills under ~/.agents/skills are already globally
+# discovered, and copying them into a project would create collision warnings.
 cp -a "$ROOT_DIR/.pi" "$TARGET/"
-cp -a "$ROOT_DIR/.agents" "$TARGET/"
 
 printf 'Copied pi configuration to %s\n' "$TARGET"
 printf 'Run pi from that project; resources are discovered automatically.\n'

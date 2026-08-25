@@ -10,7 +10,8 @@ Included source groups:
 - global Pi extensions and themes, stored only under `global-agent/` to avoid
   duplicate registration when the repository is used with an existing global
   Pi installation
-- shared `.agents/skills`
+- shared global skills from `~/.agents/skills`, stored only under
+  `global-agent/skills/` to avoid collisions with the global discovery path
 - custom model registry in `global-agent/models.json`
 
 Excluded intentionally: credentials, sessions, caches, `.env` files, databases,

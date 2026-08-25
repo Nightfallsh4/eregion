@@ -7,6 +7,7 @@ made project-local in the same way as `.pi/` resources:
 - `models.json` — custom Ollama/OpenRouter model definitions
 - `extensions/` — global extension snapshot
 - `themes/` — global theme snapshot
+- `skills/` — shared global skill snapshot
 
 Do not copy `auth.json` from a machine into a shared repository. Configure
 credentials through `/login` or environment variables instead.
