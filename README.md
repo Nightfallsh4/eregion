@@ -64,10 +64,10 @@ extension is not already present in `~/.pi/agent/extensions/` or the current
 project. This prevents duplicate commands, tools, flags, hooks, or headers on
 devices that already have the old global setup.
 
-Skills and themes are declared as package resources in `package.json`. Pi's
-normal package precedence keeps existing project/global resources ahead of the
-package resources, so existing global skills and themes do not collide with
-this package.
+Themes are declared as package resources in `package.json`. Skills are added
+through the entrypoint's `resources_discover` hook after project/global skills
+are known, so bundled skills are used only as collision-safe fallbacks. Existing
+project/global skills and themes therefore do not collide with this package.
 
 If you have old manually copied project resources from an earlier version,
 remove the duplicate copies before installing the package:

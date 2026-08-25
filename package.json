@@ -11,9 +11,7 @@
     "extensions": [
       "./extensions/eregion/index.ts"
     ],
-    "skills": [
-      "./skills"
-    ],
+    "skills": [],
     "themes": [
       "./themes"
     ]

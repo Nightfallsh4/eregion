@@ -10,7 +10,9 @@ copy of `~/.pi/agent`:
 - all extensions are loaded through one package entrypoint;
 - global-style extensions are conditionally loaded only when an equivalent is
   not already present;
-- skills and themes are contributed conditionally through `resources_discover`.
+- skills are contributed conditionally through `resources_discover`, while
+  themes are declared as native package resources so the selected theme is
+  available during startup.
 
 This layout avoids resource collisions while remaining portable to devices that
 do not already have the original global setup.
