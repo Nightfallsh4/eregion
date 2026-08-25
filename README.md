@@ -12,10 +12,10 @@ From this repository:
 ./scripts/copy-to-project.sh /path/to/your/project
 ```
 
-Or copy the two project resource directories directly:
+Or copy the project resource directory directly:
 
 ```bash
-cp -a .pi .agents /path/to/your/project/
+cp -a .pi /path/to/your/project/
 ```
 
 The copied project will get:
@@ -82,8 +82,9 @@ model registry with the provided script and copy global extensions/themes to
 
 Runtime state is deliberately not part of this snapshot. The `.gitignore`
 excludes Pi sessions, workflow caches, auth files, environment files, and
-local package installs. If the source setup changes, recopy the relevant
-`.pi/` or `.agents/` directory and review the diff.
+local package installs. If the source setup changes, recopy the relevant `.pi/` directory and review
+the diff. Do not copy `global-agent/skills/` into a project's `.agents/skills/`
+directory: those skills are intentionally machine-scoped.
 
 Extensions execute with full system access. Review changes before copying this
 configuration into a project.
