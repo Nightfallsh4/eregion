@@ -13,7 +13,7 @@ import guardrails from "./global/guardrails.js";
 import piAscii from "./global/pi-ascii.js";
 import planOnly from "./global/plan-only.js";
 import sessionDefaultModel from "./global/session-default-model.js";
-import { missingGlobalExtensionNames, missingPackageExtensionNames, missingSkillPaths, missingThemePaths } from "./resources.js";
+import { missingGlobalExtensionNames, missingPackageExtensionNames } from "./resources.js";
 
 export default function eregion(pi: ExtensionAPI): void {
 	// Global installs may still leave an older project-local copy behind. In that
@@ -29,23 +29,4 @@ export default function eregion(pi: ExtensionAPI): void {
 	if (missing.has("plan-only")) planOnly(pi);
 	if (missing.has("session-default-model")) sessionDefaultModel(pi);
 
-	pi.on("resources_discover", (event) => ({
-		skillPaths: missingSkillPaths(event.cwd),
-		themePaths: missingThemePaths(event.cwd),
-	}));
-
-	// Pi initializes the selected theme during interactive construction before
-	// resources_discover contributes package themes. If the selected theme is
-	// bundled here, Pi initially falls back to its default theme. Re-apply the
-	// user's configured theme after resource discovery has completed.
-	pi.on("session_start", (_event, ctx) => {
-		if (!ctx.hasUI) return;
-		setTimeout(() => {
-			const configuredTheme = SettingsManager.create(ctx.cwd).getTheme();
-			if (!configuredTheme) return;
-			const theme = ctx.ui.getTheme(configuredTheme);
-			if (theme) ctx.ui.setTheme(theme);
-		}, 0);
-	});
-}
 }
