@@ -56,14 +56,24 @@ export interface TestRun {
 	stderr: string;
 }
 
-export interface LintRun extends TestRun {
+export interface QualityProfile {
+	commands: Record<string, string>;
+	required: string[];
+}
+
+export interface QualityRun extends TestRun {
+	/** Name of the command in `.pi/quality.json`, for example `lint` or `unit`. */
+	name: string;
 	stage: "build" | "test-authoring" | "test-verification";
 	iteration: number;
 	attempt: number;
 	completedAt: number;
-	/** Budget cycle that produced this lint result; absent on older runs (cycle 0). */
+	/** Budget cycle that produced this quality result; absent on older runs (cycle 0). */
 	iterationCycle?: number;
 }
+
+/** @deprecated Use QualityRun. Retained temporarily for persisted lint-only state. */
+export type LintRun = QualityRun;
 
 export interface IssueResolution {
 	issueId: string;
@@ -176,7 +186,7 @@ export interface WorkflowState {
 	maxIterations: number;
 	/**
 	 * Just-build (`/b`) runs have one implementation turn rather than a
-	 * build/test iteration loop. This limits the number of lint-repair turns
+	 * build/test iteration loop. This limits the number of quality-repair turns
 	 * the same persistent Builder may receive after that turn.
 	 */
 	maxLintRepairs?: number;
@@ -221,9 +231,13 @@ export interface WorkflowState {
 	agentEfforts?: Record<string, string>;
 	/** Whether this run must finish with the optional documentation maintenance phase. */
 	documentationRequested?: boolean;
-	/** Project-specific lint command captured when this run starts. */
+	/** Project quality profile captured before the workflow starts. */
+	qualityProfile?: QualityProfile;
+	/** Every required quality command run, including failed repair attempts. */
+	qualityRuns?: QualityRun[];
+	/** @deprecated Legacy lint-only state retained for reading old persisted runs. */
 	lintCommand?: string;
-	/** Every post-build and post-test lint check, including failed repair attempts. */
+	/** @deprecated Legacy lint-only state retained for reading old persisted runs. */
 	lintRuns?: LintRun[];
 }
 

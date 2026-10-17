@@ -136,10 +136,10 @@ export function summarizeState(state: WorkflowState): string {
 				? `Builder plan: ${state.builderPlanPath}\nTester plan: ${state.testerPlanPath}`
 				: `plan: ${state.planPath}`,
 		justBuild
-			? `build turns: 1; lint-repair limit: ${state.maxLintRepairs || 0} (budget cycle ${state.iterationCycle || 0})`
+			? `build turns: 1; quality-repair limit: ${state.maxLintRepairs || 0} (budget cycle ${state.iterationCycle || 0})`
 			: `iteration: ${state.iteration}/${state.maxIterations} (budget cycle ${state.iterationCycle || 0})`,
 		`stop: ${state.stopReason || "none"}`,
-		`lint: ${state.lintCommand || "not configured"} (${(state.lintRuns || []).filter((run) => run.exitCode === 0).length} pass / ${(state.lintRuns || []).filter((run) => run.exitCode !== 0).length} fail)`,
+		`quality: ${state.qualityProfile?.required.length ? state.qualityProfile.required.join(", ") : "not configured"} (${(state.qualityRuns || []).filter((run) => run.exitCode === 0).length} pass / ${(state.qualityRuns || []).filter((run) => run.exitCode !== 0).length} fail)`,
 		`issue ledger: ${state.issueLedger?.length ? state.issueLedger.map((entry) => `${entry.issue.id}=${entry.status}`).join(", ") : "none"}`,
 		`phase: ${state.phase || "unknown"}`,
 		`agents: ${Object.entries(state.agentStatuses || {})

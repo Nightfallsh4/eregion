@@ -24,7 +24,7 @@ The extension exposes a workflow catalog. Use `/flows` to inspect available defi
         │              ├── subagent.ts     run child pi sessions
         │              ├── herdr.ts        create/control visible Herdr pi tabs
         │              ├── prompts.ts      build per-phase task text
-        │              ├── lint.ts         run required project quality checks
+        │              ├── quality.ts      run required project quality checks
         │              ├── handoffs.ts     parse/validate JSON handoffs
         │              ├── ui.ts           widget + clarification prompts
         │              ├── progress.ts     activity.jsonl events
@@ -44,7 +44,8 @@ Registers everything pi sees. Contains no workflow logic.
 - Commands: `/pbt`, `/dpbt`, `/b`, `/flow`, `/flows`, `/doc`, and their
   workflow status/resume/stop/inspect/cleanup controls. Add `--docs` to
   `/pbt`, `/dpbt`, `/b`, or `/flow` to request the final `documentation` phase
-  and its separate Docs subagent after all required test/lint gates pass.
+  and its separate Docs subagent after all required Tester and orchestrator-owned
+  quality gates pass.
   `/doc` instead sends a normal, visible documentation-maintenance turn to the
   same Pi session that invoked it. `--doc` remains a compatibility alias.
 - Tools: `pbt_flow_start`, `pbt_flow_resume`, `pbt_flow_status`,
@@ -62,10 +63,12 @@ Registers everything pi sees. Contains no workflow logic.
 1. Start (or reuse after resume) a persistent `build.jsonl` Builder session.
 2. Make exactly one implementation turn. There is no plan artifact, Designer,
    Tester, test authoring, or test verification phase.
-3. Run `.pi/lint.json` programmatically after the Builder handoff.
-4. On a non-zero lint exit, send the captured diagnostics to that same
-   `build.jsonl` Builder session, then rerun lint. This repeats up to the
-   workflow preset's `loop.maxIterations` repair-turn limit (3 by default).
+3. Run every required `.pi/quality.json` command programmatically after the
+   Builder handoff.
+4. On any non-zero quality-command exit, send the captured diagnostics to that
+   same `build.jsonl` Builder session, then rerun every required command. This
+   repeats up to the workflow preset's `loop.maxIterations` repair-turn limit
+   (3 by default).
 5. Persist all Builder handoffs and lint attempts in the normal `state.json`,
    activity log, status widget, final report, and Herdr tab lifecycle.
 
@@ -111,8 +114,9 @@ provided, it continues the existing run instead of creating a new one:
    redundantly repopulated on every turn. In Herdr mode, these are the same
    visible builder/tester tabs. Stops on pass, `maxIterations`, or a detected
    plateau (`handoffs.ts#detectPlateau`).
-9. When a workflow was started with `--docs` and every required test/lint gate
-   passes, run the separate Docs subagent as the final `documentation` phase.
+9. When a workflow was started with `--docs` and every required Tester and
+   orchestrator-owned quality gate passes, run the separate Docs subagent as the
+   final `documentation` phase.
    It updates only `docs/`, maintains `docs/README.md` as the entry point,
    keeps concise feature/technical/decision documentation, and removes obsolete
    or redundant docs files.
@@ -217,18 +221,19 @@ assistant message (fenced ` ```json ` block or bare JSON).
 - Analysis: `isVerificationHandoff`, `latestVerification`, `detectPlateau`
   (same non-zero failed-test count twice in a row)
 
-### `lint.ts` — required project quality gate
+### `quality.ts` — required project quality profile
 
-Reads and writes `.pi/lint.json`, runs the configured command with a bounded
-timeout, captures output, and supplies diagnostics to persistent agent repair
-turns. The orchestrator records all attempts in run state and blocks phase
-transitions until the command passes.
+Reads `.pi/quality.json`, validates its named commands and required list, runs
+every required command with a bounded timeout, captures output, and supplies
+machine-captured diagnostics to persistent agent repair turns. The orchestrator
+records all attempts in run state and blocks phase transitions until every
+required command passes.
 
 ### `documentation.ts` and `agents/docs.md` — docs maintenance
 
 The optional final documentation phase uses a separate Docs subagent and is
 recorded as a `documentation` handoff. It runs only after the workflow's
-required test/lint gates pass. Its prompt strictly limits changes to `docs/`;
+required Tester and orchestrator-owned quality gates pass. Its prompt strictly limits changes to `docs/`;
 it creates or maintains `docs/README.md` as the entry point, organizes important
 material into focused feature, technical, and decision documents as appropriate,
 and removes obsolete, duplicate, or empty documentation files. `/doc` does not
@@ -378,48 +383,58 @@ Plus the reserved `acache/plans/plan-<slug>.md`, written by the planner subagent
 
 ## Configuration
 
-### Required project lint gate
+### Required project quality profile
 
-Before running `/pbt`, `/dpbt`, `/b`, or a workflow tool, configure the project's lint
-command once:
+Before running `/pbt`, `/dpbt`, `/b`, or a workflow tool, configure the
+project's quality profile once:
 
 ```text
 /pbt-lint-setup
 ```
 
-The command starts a visible, interruptible setup turn in the **current Pi
-session** — it does not start a detached/background subagent. The agent inspects
-manifests, lockfiles, source languages, existing scripts/configuration, and CI
-conventions; reuses a working linter where possible; otherwise creates the best
-ecosystem-appropriate project-local lint/static-analysis configuration and
-standard project script. It writes `.pi/lint.json` itself with the selected shell
-command and a 25-minute timeout. Normal Pi interruption, steering, and follow-up
-controls remain available while it works:
+The command name remains for compatibility. It starts a visible, interruptible
+setup turn in the **current Pi session** — it does not start a
+detached/background subagent. The agent inspects manifests, lockfiles, source
+languages, existing scripts/configuration, and CI conventions; reuses working
+project-local checks where possible; otherwise creates appropriate local
+configuration and standard scripts. It writes `.pi/quality.json` itself:
 
 ```json
 {
-  "command": "npm run lint",
-  "timeoutMs": 1500000
+  "commands": {
+    "format": "npm run format:check",
+    "lint": "npm run lint",
+    "typecheck": "npm run typecheck",
+    "build": "npm run build",
+    "unit": "npm test"
+  },
+  "required": ["lint", "typecheck", "build", "unit"]
 }
 ```
 
-This project-specific file is the command source used by PBT, DPBT, and
-just-build. Run `/pbt-lint-setup --force` to re-evaluate and replace an existing
-setup. PBT and DPBT fail with setup instructions if this file is absent or
-invalid; linting is a required quality barrier, not a best-effort optional
-check.
+`commands` may include any applicable reproducible checks, including
+integration, e2e, or security. `required` is non-empty, duplicate-free, and
+must name configured commands. This project-specific file is the command source
+used by PBT, DPBT, and just-build. Run `/pbt-lint-setup --force` to re-evaluate
+and replace an existing profile. A missing, unreadable, or invalid profile fails
+before child agents start, explains the reason, and directs the operator to
+`/pbt-lint-setup`.
 
-PBT/DPBT run the command after each build turn, after test authoring, and after
-verification. A failing build check is sent to the persistent Builder; a
-failing test-phase check is sent to the persistent Tester. The same session
-repairs the reported findings, then the orchestrator reruns lint.
+PBT/DPBT run every required command after each build turn, after test authoring,
+and after verification. A failing build check is sent to the persistent Builder;
+a failing test-phase check is sent to the persistent Tester. The same session
+repairs the reported findings, then the orchestrator reruns every required
+command. It records each command name, exit code, stdout, and stderr in
+`state.json` and the final report. A passing Tester handoff must report only
+successful test runs, but it is not the authority for workflow completion: all
+required profile commands must independently exit successfully.
 
-Just-build runs it once immediately after its sole Builder handoff. A failure
-is sent back to the **same persistent Builder session** (never a new agent),
-then the command is rerun. Its `workflows/b.json` `loop.maxIterations` value
-is the number of allowed lint-repair turns, defaulting to three. No workflow
-can complete until lint exits successfully. Every lint command, exit code, and
-captured output is saved in `state.json` and the final report.
+Just-build runs every required command immediately after its sole Builder
+handoff. A failure is sent back to the **same persistent Builder session**
+(never a new agent), then every required command is rerun. Its
+`workflows/b.json` `loop.maxIterations` value is the number of allowed
+quality-repair turns, defaulting to three. No workflow can complete until every
+required command exits successfully.
 
 ### Per-subagent models and effort
 

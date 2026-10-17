@@ -13,6 +13,9 @@
       "./third_party/superpowers/.pi/extensions/superpowers.ts"
     ],
     "skills": [],
+    "prompts": [
+      "./prompts/*.md"
+    ],
     "themes": [
       "./themes"
     ]

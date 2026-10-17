@@ -75,7 +75,7 @@ const FALLBACKS: WorkflowDefinition[] = [
 		id: "b",
 		workflowName: "b",
 		variant: "just-build",
-		description: "Build a focused request, then run the required lint gate and return findings to the same Builder session.",
+		description: "Build a focused request, then run required quality-profile commands and return findings to the same Builder session.",
 		runner: "build",
 		interactive: false,
 		maxIterations: 3,

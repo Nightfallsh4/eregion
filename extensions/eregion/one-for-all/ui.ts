@@ -48,7 +48,7 @@ export function updateUI(ctx: ExtensionContext | ExtensionCommandContext, state:
 	const author = currentHandoffs.find((handoff) => handoff.phase === "test" && handoff.testStage === "authoring");
 	const test = currentHandoffs.filter(isVerificationHandoff).at(-1);
 	const documentation = currentHandoffs.filter((handoff) => handoff.phase === "documentation").at(-1);
-	const latestLintRun = state.lintRuns?.filter((run) => (run.iterationCycle || 0) === cycle).at(-1);
+	const latestQualityRun = state.qualityRuns?.filter((run) => (run.iterationCycle || 0) === cycle).at(-1);
 	const lines = [
 		`┌─ Workflow: ${state.runId} ───────────────────────────────`,
 		`│ ${justBuild ? "⏳" : plan ? "✓" : "⏳"} ${state.workflowId || state.workflowName} ${justBuild ? "(just build)" : state.interactive ? "(interactive)" : "(simple)"}${justBuild ? " · one Builder phase" : `  ${state.builderPlanPath || state.planPath}`}`,
@@ -59,9 +59,9 @@ export function updateUI(ctx: ExtensionContext | ExtensionCommandContext, state:
 			`│ ${test ? (test.status === "pass" ? "✓" : "! ") : "⏳"} test verification ${test ? `${test.status} (iteration ${test.iteration})` : "waiting"}`,
 		]),
 		...(state.documentationRequested ? [`│ ${documentation ? "✓" : "⏳"} docs maintenance ${documentation ? "updated" : "waiting for successful workflow"}`] : []),
-		`│ ${justBuild ? `Single build · Lint repairs ${state.maxLintRepairs || 0} · Budget cycle ${state.iterationCycle || 0}` : `Iteration ${state.iteration}/${state.maxIterations} · Budget cycle ${state.iterationCycle || 0}`} · Status: ${state.status}`,
+		`│ ${justBuild ? `Single build · Quality repairs ${state.maxLintRepairs || 0} · Budget cycle ${state.iterationCycle || 0}` : `Iteration ${state.iteration}/${state.maxIterations} · Budget cycle ${state.iterationCycle || 0}`} · Status: ${state.status}`,
 		`│ Stop reason: ${state.stopReason || "none"}`,
-		`│ Lint: ${latestLintRun ? `${latestLintRun.exitCode === 0 ? "passed" : "failed"} · ${latestLintRun.stage} (attempt ${latestLintRun.attempt})` : truncate(state.lintCommand || "not configured", 80)}`,
+		`│ Quality: ${latestQualityRun ? `${latestQualityRun.exitCode === 0 ? "passed" : "failed"} · ${latestQualityRun.name} (${latestQualityRun.stage}, attempt ${latestQualityRun.attempt})` : truncate(state.qualityProfile?.required.join(", ") || "not configured", 80)}`,
 		...(justBuild ? [] : [
 			`│ Issue ledger: ${state.issueLedger?.length ? state.issueLedger.map((entry) => `${entry.issue.id}=${entry.status}`).join(", ") : "none"}`,
 			`│ Questions answered: ${state.answers.length} · Builder: ${state.builderPlanPath || state.planPath} · Tester: ${state.testerPlanPath || "legacy plan"}`,

@@ -21,5 +21,9 @@ test("butler persona adds its own system-prompt section without replacing others
 	assert.equal(event.systemPromptOptions.sections.existing, "Keep this instruction.");
 	assert.equal(event.systemPromptOptions.sections.eregion_butler_persona, BUTLER_PERSONA_PROMPT);
 	assert.match(BUTLER_PERSONA_PROMPT, /English\s+butler/i);
-	assert.match(BUTLER_PERSONA_PROMPT, /understated wit/i);
+	assert.match(BUTLER_PERSONA_PROMPT, /proactive personal AI assistant/i);
+	assert.match(BUTLER_PERSONA_PROMPT, /Anticipate sensible next steps/i);
+	assert.match(BUTLER_PERSONA_PROMPT, /good-natured sarcasm/i);
+	assert.match(BUTLER_PERSONA_PROMPT, /every appropriate\s+interaction/i);
+	assert.match(BUTLER_PERSONA_PROMPT, /formal English/i);
 });

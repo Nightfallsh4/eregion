@@ -166,14 +166,14 @@ test("a new budget cycle does not show stale verification or lint failures", () 
 	state.iterationCycle = 1;
 	state.failureReason = undefined;
 	state.stopReason = undefined;
-	state.lintCommand = "npm run lint";
-	state.lintRuns = [{ stage: "build", iteration: 5, attempt: 1, exitCode: 1, command: "npm run lint", stdout: "", stderr: "previous error", completedAt: 1, iterationCycle: 0 }];
+	state.qualityProfile = { commands: { lint: "npm run lint" }, required: ["lint"] };
+	state.qualityRuns = [{ name: "lint", stage: "build", iteration: 5, attempt: 1, exitCode: 1, command: "npm run lint", stdout: "", stderr: "previous error", completedAt: 1, iterationCycle: 0 }];
 	state.handoffs = [{ phase: "test", testStage: "verification", iteration: 5, iterationCycle: 0, summary: "previous error", artifacts: [], decisions: [], status: "fail", completedAt: 1 }];
 	updateUI(ctx, state);
 	const lines = getWidget().render(120).join("\n");
 	assert.match(lines, /test verification waiting/);
-	assert.match(lines, /Lint: npm run lint/);
-	assert.doesNotMatch(lines, /previous error|test verification fail|Lint: failed/);
+	assert.match(lines, /Quality: lint/);
+	assert.doesNotMatch(lines, /previous error|test verification fail|Quality: failed/);
 });
 
 test("running widgets cannot expand from multiline errors, long ledgers, or wide Unicode", () => {
@@ -200,13 +200,18 @@ test("running widgets cannot expand from multiline errors, long ledgers, or wide
 	}
 });
 
-test("PBT status and final reports show both role-specific plan artifacts", () => {
+test("PBT status and final reports show role-specific plans and captured quality evidence", () => {
 	const state = failedState();
 	state.builderPlanPath = "acache/plans/builder-plan-display.md";
 	state.testerPlanPath = "acache/plans/tester-plan-display.md";
+	state.qualityProfile = { commands: { unit: "bun test" }, required: ["unit"] };
+	state.qualityRuns = [{ name: "unit", stage: "test-verification", iteration: 1, attempt: 1, exitCode: 0, command: "bun test", stdout: "24 pass", stderr: "", completedAt: 3 }];
 	assert.match(inspectState(state, os.tmpdir()), /Builder plan: acache\/plans\/builder-plan-display\.md/);
 	assert.match(buildFinalReport(state), /Builder plan: acache\/plans\/builder-plan-display\.md/);
 	assert.match(buildFinalReport(state), /Tester plan: acache\/plans\/tester-plan-display\.md/);
+	assert.match(buildFinalReport(state), /## Quality gates/);
+	assert.match(buildFinalReport(state), /unit.*test-verification.*pass/i);
+	assert.match(buildFinalReport(state), /`bun test` → exit 0/);
 });
 
 test("aborted and other terminal states leave a compact widget", () => {
@@ -327,7 +332,7 @@ test("headless reports retain stdout output and complete persisted diagnostics",
 	assert.equal(listStates(cwd)[0].failureReason, diagnostics);
 });
 
-test("/pbt-lint-setup starts a visible, current-session agent turn", async (t) => {
+test("/pbt-lint-setup starts a visible, current-session quality-profile setup turn", async (t) => {
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "eregion-lint-setup-"));
 	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
 	const { ctx } = makeContext(cwd);
@@ -337,7 +342,7 @@ test("/pbt-lint-setup starts a visible, current-session agent turn", async (t) =
 	assert.equal(userMessages.length, 1);
 	assert.match(userMessages[0], /current session/);
 	assert.match(userMessages[0], /do not delegate it to a background\/subagent session/);
-	assert.match(userMessages[0], /\.pi[\\/]lint\.json/);
+	assert.match(userMessages[0], /\.pi[\\/]quality\.json/);
 });
 
 test("/doc starts a visible maintenance turn in its invoking session", async () => {
@@ -366,7 +371,7 @@ test("--docs requests the separate final documentation phase", async (t) => {
 	const state = listStates(cwd)[0];
 	assert.equal(state.documentationRequested, true);
 	assert.equal(state.status, "failed");
-	assert.match(state.failureReason!, /linting is not configured/);
+	assert.match(state.failureReason!, /quality configuration is not available/);
 });
 
 test("a session delivery failure does not fall back to raw stdout in the TUI", (t) => {
@@ -416,7 +421,7 @@ for (const [command, args, resume] of [
 		await commands.get(command)!.handler(args, ctx);
 		const state = listStates(cwd)[0];
 		assert.equal(state.status, "failed");
-		assert.match(state.failureReason!, /linting is not configured/);
+		assert.match(state.failureReason!, /quality configuration is not available/);
 		assert.equal(notices.filter((notice) => notice.type === "error").length, 0);
 		await commands.get(resume)!.handler(state.runId, ctx);
 		assert.equal(notices.filter((notice) => notice.type === "error").length, 0);
@@ -424,7 +429,7 @@ for (const [command, args, resume] of [
 		assert.equal(log.mock.callCount(), 0);
 		await commands.get("pbt-status")!.handler(state.runId, ctx);
 		await commands.get("pbt-inspect")!.handler(state.runId, ctx);
-		assert.match(messages.at(-1)!.content, /failure: .*linting is not configured/);
+		assert.match(messages.at(-1)!.content, /failure: .*quality configuration is not available/);
 		assert.equal(log.mock.callCount(), 0);
 		for (const notice of notices) assertSafeLine(notice.text);
 	});

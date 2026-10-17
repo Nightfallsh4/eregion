@@ -3,9 +3,9 @@
  *
  * Unlike PBT/DPBT this workflow has no plan, design, test-authoring, or test
  * verification phase. It makes one implementation turn in a persistent
- * Builder session, runs the configured project lint command itself, and gives
- * each failed lint result back to that exact Builder session until lint passes
- * or the configured repair budget is exhausted.
+ * Builder session, runs every required project quality command itself, and
+ * gives each failed result back to that exact Builder session until all
+ * required commands pass or the configured repair budget is exhausted.
  */
 
 import * as path from "node:path";
@@ -18,12 +18,12 @@ import { finishReport } from "./report.js";
 import { isHerdrTuiEnabled } from "./herdr.js";
 import { resolveSubagentEfforts, resolveSubagentModels, runSubagent, type SubagentEfforts, type SubagentModels } from "./subagent.js";
 import { activeRuns, createRunId, saveState } from "./state.js";
-import type { LintRun, ProgressEvent, RunControl, WorkflowState } from "./types.js";
+import type { ProgressEvent, QualityRun, RunControl, WorkflowState } from "./types.js";
 import { ensureDirectory } from "./util.js";
 import { updateUI } from "./ui.js";
 import { projectAgentPath } from "../package-paths.js";
 import { refreshOpenRouterModels } from "../openrouter-dynamic-models/index.js";
-import { readLintConfig, renderLintFailure, runLintCommand, type LintConfig } from "./lint.js";
+import { readQualityConfig, renderQualityFailure, runQualityCommand, type QualityConfig } from "./quality.js";
 import { runDocumentationPhase } from "./documentation.js";
 
 export function isJustBuildState(state: WorkflowState): boolean {
@@ -116,7 +116,12 @@ export async function runBuildWorkflow(
 	saveState(cwd, state, pi);
 	updateUI(ctx, state);
 
-	const missingOpenRouterModel = Object.values(models || {}).some((raw) => {
+	try {
+		const qualityConfig: QualityConfig = readQualityConfig(cwd);
+		state.qualityProfile = { commands: qualityConfig.commands, required: qualityConfig.required };
+		saveState(cwd, state, pi);
+
+		const missingOpenRouterModel = Object.values(models || {}).some((raw) => {
 		const value = raw?.trim();
 		if (!value) return false;
 		const slash = value.indexOf("/");
@@ -172,11 +177,6 @@ export async function runBuildWorkflow(
 		...progress(phase),
 	});
 
-	try {
-		const lintConfig: LintConfig = readLintConfig(cwd);
-		state.lintCommand = lintConfig.command;
-		saveState(cwd, state, pi);
-
 		let buildHandoff = state.handoffs
 			.filter((handoff) => handoff.phase === "build" && handoff.iteration === 1)
 			.at(0);
@@ -198,30 +198,32 @@ export async function runBuildWorkflow(
 
 		for (let attempt = 1; attempt <= state.maxLintRepairs! + 1; attempt++) {
 			if (controller.signal.aborted) throw new Error("Workflow aborted");
-			state.phase = "build lint";
+			state.phase = "build quality";
 			state.status = "running";
-			state.latestOutput = `Running project lint command: ${lintConfig.command}`;
+			state.latestOutput = `Running required project quality commands: ${qualityConfig.required.join(", ")}`;
 			appendProgress(cwd, state, {
-				timestamp: Date.now(), agent: "lint", phase: "build lint", kind: "started",
-				message: `Running configured lint command (attempt ${attempt})`, details: lintConfig.command,
+				timestamp: Date.now(), agent: "quality", phase: "build quality", kind: "started",
+				message: `Running ${qualityConfig.required.length} required quality command(s) (attempt ${attempt})`, details: qualityConfig.required.join(", "),
 			});
 			saveState(cwd, state, pi);
 			updateUI(ctx, state);
 
-			const result = await runLintCommand(cwd, lintConfig, controller.signal);
-			const lintRun: LintRun = { ...result, stage: "build", iteration: 1, attempt, completedAt: Date.now(), iterationCycle: cycle };
-			state.lintRuns = [...(state.lintRuns || []), lintRun];
-			appendProgress(cwd, state, {
-				timestamp: lintRun.completedAt,
-				agent: "lint",
-				phase: "build lint",
-				kind: result.exitCode === 0 ? "completed" : "failed",
-				message: result.exitCode === 0 ? "Project lint passed" : `Project lint failed with exit code ${result.exitCode}`,
-				details: result.exitCode === 0 ? result.command : renderLintFailure(result).slice(0, 2_000),
-			});
+			const results: QualityRun[] = [];
+			for (const name of qualityConfig.required) {
+				const result = await runQualityCommand(cwd, name, qualityConfig.commands[name], qualityConfig.timeoutMs, controller.signal);
+				const qualityRun: QualityRun = { ...result, stage: "build", iteration: 1, attempt, completedAt: Date.now(), iterationCycle: cycle };
+				results.push(qualityRun);
+				state.qualityRuns = [...(state.qualityRuns || []), qualityRun];
+				appendProgress(cwd, state, {
+					timestamp: qualityRun.completedAt, agent: "quality", phase: "build quality",
+					kind: result.exitCode === 0 ? "completed" : "failed",
+					message: result.exitCode === 0 ? `Quality command ${name} passed` : `Quality command ${name} failed with exit code ${result.exitCode}`,
+					details: result.exitCode === 0 ? result.command : renderQualityFailure(result).slice(0, 2_000),
+				});
+			}
 			saveState(cwd, state, pi);
-			updateUI(ctx, state, result.exitCode === 0 ? "Project lint passed" : renderLintFailure(result));
-			if (result.exitCode === 0) {
+			const failed = results.filter((result) => result.exitCode !== 0);
+			if (failed.length === 0) {
 				if (state.documentationRequested) await runDocumentationPhase(pi, ctx, state, models, controller.signal, efforts);
 				state.status = "completed";
 				state.phase = "completed";
@@ -231,22 +233,22 @@ export async function runBuildWorkflow(
 				return state;
 			}
 
-			const diagnostics = renderLintFailure(result);
+			const diagnostics = failed.map(renderQualityFailure).join("\n\n");
 			if (attempt > state.maxLintRepairs!) {
-				throw new Error(`Project lint still fails after ${state.maxLintRepairs} repair attempt(s); just-build cannot complete.\n${diagnostics}`);
+				throw new Error(`Required project quality commands still fail after ${state.maxLintRepairs} repair attempt(s); just-build cannot complete.\n${diagnostics}`);
 			}
-			state.phase = "build lint repair";
-			state.latestOutput = "Sending lint failure to the persistent Builder session";
+			state.phase = "build quality repair";
+			state.latestOutput = "Sending quality-gate failures to the persistent Builder session";
 			saveState(cwd, state, pi);
 			updateUI(ctx, state, diagnostics);
-			const repairResult = await runBuilder(buildJustBuildLintRepairTask(diagnostics, attempt), `build-lint-repair-${attempt}`);
+			const repairResult = await runBuilder(buildJustBuildLintRepairTask(diagnostics, attempt), `build-quality-repair-${attempt}`);
 			const repairHandoff = requireHandoff(repairResult, "build", 1);
 			repairHandoff.iterationCycle = cycle;
 			state.handoffs.push(repairHandoff);
 			saveState(cwd, state, pi);
 			updateUI(ctx, state, repairResult.output);
 		}
-		throw new Error("Just-build lint loop ended unexpectedly");
+		throw new Error("Just-build quality loop ended unexpectedly");
 	} catch (error) {
 		const aborted = controller.signal.aborted || /aborted/i.test(error instanceof Error ? error.message : String(error));
 		state.status = aborted ? "aborted" : "failed";

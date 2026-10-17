@@ -12,26 +12,29 @@ specialized pi subagent sessions and accumulates structured handoffs in
 `.pi/workflows/pbt-simple.json` and `.pi/workflows/pbt-interactive.json`
 document the two variants used by the extension.
 
-## Configure project linting before a workflow
+## Configure the project quality profile before a workflow
 
-PBT, DPBT, and just-build require a project-specific quality command. When
-starting in a new project, choose its linter/static-analysis command and
-configure it once before building:
+PBT, DPBT, and just-build require a project-specific quality profile. When
+starting in a new project, configure its reproducible required commands before
+building:
 
 ```text
 /pbt-lint-setup
 ```
 
-The command starts a visible, interruptible setup turn in the current Pi
-session. The agent inspects the project, chooses or reuses the appropriate
-project-local lint/static-analysis tool, creates its config files and standard
-project script, then writes the resulting command to `.pi/lint.json`. The
-orchestrator runs that command after build turns, test authoring, and
-verification; failures are returned to the persistent Builder or Tester session
-and must pass before the next phase or iteration. Interrupt it or add context
-with Pi's normal controls. Run `/pbt-lint-setup --force` to re-evaluate an
-existing setup. If the config is missing, the workflow stops with setup
-instructions.
+The command name remains for compatibility. It starts a visible, interruptible
+setup turn in the current Pi session. The agent inspects the project, chooses
+or reuses the appropriate project-local format, lint, type-check, build, test,
+and other applicable commands, creates required configuration/scripts, then
+writes `.pi/quality.json`. Its `commands` object maps names to shell commands;
+its non-empty `required` list selects the commands the orchestrator must run.
+The orchestrator executes every required command after build turns, test
+authoring, and verification, captures output itself, and routes failures to the
+persistent Builder or Tester session before proceeding. Interrupt it or add
+context with Pi's normal controls. Run `/pbt-lint-setup --force` to re-evaluate
+an existing profile. If the profile is missing or invalid, the workflow stops
+before child agents start, explains the reason, and directs the operator to
+`/pbt-lint-setup`.
 
 ## Start a workflow
 
@@ -47,7 +50,7 @@ conversation:
   revising the mockup. DPBT planning remains non-interactive after approval.
 - Add `--docs` to `/pbt`, `/dpbt`, or `/b` (for example, `/pbt --docs <request>`
   or `/dpbt --interactive --docs <request>`) to request an isolated Docs-agent
-  maintenance phase after every required test and lint gate has passed. This is
+  maintenance phase after every required Tester and orchestrator-owned quality gate has passed. This is
   a distinct `documentation` phase and subagent; it updates only the project's
   `docs/` folder. It maintains `docs/README.md` as the entry point and concise
   linked feature, technical, and decision documents, removing obsolete or
@@ -56,10 +59,10 @@ conversation:
   `--doc` remains a backwards-compatible alias for `--docs`.
 - `/b <request>` — just-build for a focused, simpler task. It has one
   persistent Builder phase and no plan, design, tester, or test-verification
-  phase. After the Builder handoff, the orchestrator programmatically runs the
-  configured lint command; each failure is returned to the same Builder
-  session for repair and lint is rerun until it passes or the configured repair
-  budget is exhausted.
+  phase. After the Builder handoff, the orchestrator programmatically runs
+  every required quality command; each failure is returned to the same Builder
+  session for repair and the required commands are rerun until all pass or the
+  configured repair budget is exhausted.
 
 The LLM can also call `pbt_start` with `request` and optional
 `interactive: true` when the user explicitly asks to start a workflow.
@@ -86,16 +89,17 @@ The LLM can also call `pbt_start` with `request` and optional
    Persistent sessions retain prior context, so follow-up handoffs provide
    only new information rather than repeating the request, plan, and old issue
    list.
-7. When `--docs` was requested and every required test/lint gate passes, a
-   separate Docs subagent runs the final `documentation` phase over `docs/` and
-   records its handoff before the workflow is marked complete.
+7. When `--docs` was requested and every required Tester check and
+   orchestrator-owned quality command passes, a separate Docs subagent runs the
+   final `documentation` phase over `docs/` and records its handoff before the
+   workflow is marked complete.
 8. State and all handoffs are written to `state.json`, with a final report in
    the TUI/session and stdout-compatible command output.
 
-For `/b`, the lifecycle is simply Builder → programmatic lint → same Builder
-lint-repair turn(s) → lint pass/fail. The bundled `workflows/b.json` preset
-sets `loop.maxIterations` to the maximum lint-repair turns (default 3), not
-multiple implementation turns.
+For `/b`, the lifecycle is simply Builder → programmatic required-quality
+commands → same Builder quality-repair turn(s) → all quality commands pass/fail.
+The bundled `workflows/b.json` preset sets `loop.maxIterations` to the maximum
+quality-repair turns (default 3), not multiple implementation turns.
 
 ## Inspect or control runs
 
@@ -138,9 +142,9 @@ for other workflows:
 - `progress.ts` — `activity.jsonl` append/read/format
 - `report.ts` — final markdown report rendering/delivery
 - `ui.ts` — status widget and clarification prompts
-- `orchestrator.ts` — the plan-build-test control loop and required project lint barriers
-- `build-orchestrator.ts` — the `/b` one-build + persistent Builder lint-repair loop
-- `lint.ts` — `.pi/lint.json` setup, configured command execution, and captured diagnostics
+- `orchestrator.ts` — the plan-build-test control loop and required project quality barriers
+- `build-orchestrator.ts` — the `/b` one-build + persistent Builder quality-repair loop
+- `quality.ts` — `.pi/quality.json` setup, required command execution, and captured diagnostics
 - `constants.ts`, `types.ts`, `util.ts` — shared config, contracts, helpers
 
 To build a new workflow, import the generic modules (subagent, handoffs,

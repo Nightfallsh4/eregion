@@ -24,5 +24,10 @@ test("build and test prompts expose only their own plan", () => {
 test("passing verification requires cleared tester-plan conditions", () => {
 	const verification: PhaseHandoff = { ...author, testStage: "verification", status: "pass", testRuns: [{ command: "bun test", exitCode: 0, stdout: "", stderr: "" }] };
 	assert.throws(() => validateVerificationHandoff(verification), /clearance/i);
-	assert.doesNotThrow(() => validateVerificationHandoff({ ...verification, testerPlanClearance: [{ id: "scenario-1", status: "passed", evidence: "bun test passed" }] }));
+	const cleared = { ...verification, testerPlanClearance: [{ id: "scenario-1", status: "passed" as const, evidence: "bun test passed" }] };
+	assert.doesNotThrow(() => validateVerificationHandoff(cleared));
+	assert.throws(
+		() => validateVerificationHandoff({ ...cleared, testRuns: [{ command: "bun test", exitCode: 1, stdout: "", stderr: "failing test" }] }),
+		/successful.*test run|exit code/i,
+	);
 });

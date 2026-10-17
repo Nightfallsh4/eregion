@@ -29,9 +29,9 @@ export function buildFinalReport(state: WorkflowState): string {
 				: [`- Plan: ${state.planPath}`]),
 		...(state.documentationRequested ? [`- Documentation phase: ${state.handoffs.some((handoff) => handoff.phase === "documentation") ? "completed" : "requested but not completed"}`] : []),
 		...(state.design ? [`- Design review: ${state.design.status}, revision ${state.design.revision}${state.design.previewUrl ? ` (${state.design.previewUrl})` : ""}`, `- Design decisions: ${state.design.decisionPath}`] : []),
-		...(justBuild ? [`- Build turns: 1; lint-repair limit: ${state.maxLintRepairs || 0} (budget cycle ${state.iterationCycle || 0})`] : [`- Iterations: ${state.iteration}/${state.maxIterations} (budget cycle ${state.iterationCycle || 0})`]),
+		...(justBuild ? [`- Build turns: 1; quality-repair limit: ${state.maxLintRepairs || 0} (budget cycle ${state.iterationCycle || 0})`] : [`- Iterations: ${state.iteration}/${state.maxIterations} (budget cycle ${state.iterationCycle || 0})`]),
 		`- Stop reason: ${state.stopReason || "none"}`,
-		`- Lint command: ${state.lintCommand || "not configured"}`,
+		`- Required quality commands: ${state.qualityProfile?.required.length ? state.qualityProfile.required.map((name) => `${name}=${state.qualityProfile!.commands[name]}`).join(", ") : "not configured"}`,
 		`- Issue ledger: ${state.issueLedger?.length ? state.issueLedger.map((entry) => `${entry.issue.id}=${entry.status} (${entry.attempts} attempt${entry.attempts === 1 ? "" : "s"})`).join(", ") : "none"}`,
 		"",
 		"## Handoffs",
@@ -63,14 +63,14 @@ export function buildFinalReport(state: WorkflowState): string {
 			if (issue.details) lines.push(`  - Details: ${issue.details}`);
 		}
 	}
-	lines.push("", "## Lint quality gates");
-	for (const lintRun of state.lintRuns || []) {
-		lines.push(`### ${lintRun.stage} · iteration ${lintRun.iteration}, attempt ${lintRun.attempt}: ${lintRun.exitCode === 0 ? "pass" : `fail (exit ${lintRun.exitCode})`}`);
-		lines.push(`- \`${lintRun.command}\``);
-		if (lintRun.stdout) lines.push(`  stdout: ${truncate(lintRun.stdout.replace(/\s+/g, " "), 500)}`);
-		if (lintRun.stderr) lines.push(`  stderr: ${truncate(lintRun.stderr.replace(/\s+/g, " "), 500)}`);
+	lines.push("", "## Quality gates");
+	for (const qualityRun of state.qualityRuns || []) {
+		lines.push(`### ${qualityRun.name} · ${qualityRun.stage} · iteration ${qualityRun.iteration}, attempt ${qualityRun.attempt}: ${qualityRun.exitCode === 0 ? "pass" : `fail (exit ${qualityRun.exitCode})`}`);
+		lines.push(`- \`${qualityRun.command}\` → exit ${qualityRun.exitCode}`);
+		if (qualityRun.stdout) lines.push(`  stdout: ${truncate(qualityRun.stdout.replace(/\s+/g, " "), 500)}`);
+		if (qualityRun.stderr) lines.push(`  stderr: ${truncate(qualityRun.stderr.replace(/\s+/g, " "), 500)}`);
 	}
-	if (!(state.lintRuns || []).length) lines.push("No lint checks recorded.");
+	if (!(state.qualityRuns || []).length) lines.push("No quality checks recorded.");
 	if (state.failureReason) lines.push("", `Failure reason: ${state.failureReason}`);
 	return lines.join("\n");
 }

@@ -459,6 +459,9 @@ export function validateVerificationHandoff(handoff: PhaseHandoff): void {
 	if (!handoff.testRuns || handoff.testRuns.length === 0) {
 		throw new Error("Tester verification handoff must include captured testRuns");
 	}
+	if (handoff.status === "pass" && handoff.testRuns.some((run) => run.exitCode !== 0)) {
+		throw new Error("Passing tester verification must contain only successful test runs (exit code 0)");
+	}
 	if (handoff.status === "pass" && (!handoff.testerPlanClearance?.length || handoff.testerPlanClearance.some((condition) => condition.status !== "passed"))) {
 		throw new Error("Passing tester verification must include all-passed tester plan clearance");
 	}

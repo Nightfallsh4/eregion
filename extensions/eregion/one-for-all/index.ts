@@ -39,17 +39,17 @@ import { compactErrorMessage, sanitizeTerminalText, truncate } from "./util.js";
 import type { WorkflowState } from "./types.js";
 import { updateUI } from "./ui.js";
 import { formatWorkflowCatalog, loadWorkflowDefinitions, resolveWorkflow, type WorkflowDefinition } from "./workflows.js";
-import { buildLintSetupTask, LINT_CONFIG_PATH } from "./lint.js";
+import { buildQualitySetupTask, QUALITY_CONFIG_PATH } from "./quality.js";
 import { buildDocumentationTask } from "./prompts.js";
 
 const WorkflowStartParams = Type.Object({
 	request: Type.String({ description: "Feature request for the selected workflow" }),
 	workflow: Type.Optional(Type.String({ description: "Workflow catalog ID; defaults to pbt-simple" })),
 	interactive: Type.Optional(Type.Boolean({ description: "Use clarification rounds in the main UI (design phase for DPBT, plan phase for PBT)", default: false })),
-	docs: Type.Optional(Type.Boolean({ description: "Run the final documentation-maintenance subagent after every required test/lint gate passes", default: false })),
+	docs: Type.Optional(Type.Boolean({ description: "Run the final documentation-maintenance subagent after every required Tester and quality gate passes", default: false })),
 	// Keep the original tool parameter working while slash commands use --docs.
 	doc: Type.Optional(Type.Boolean({ description: "Deprecated alias for docs", default: false })),
-	maxIterations: Type.Optional(Type.Number({ description: "Maximum build/test iterations, or just-build lint-repair turns" })),
+	maxIterations: Type.Optional(Type.Number({ description: "Maximum build/test iterations, or just-build quality-repair turns" })),
 });
 
 const WorkflowStatusParams = Type.Object({
@@ -67,7 +67,7 @@ const WorkflowStopParams = Type.Object({
 
 const WorkflowResumeParams = Type.Object({
 	runId: Type.Optional(Type.String({ description: "Run ID to resume; defaults to the newest resumable run" })),
-	maxIterations: Type.Optional(Type.Number({ description: "Maximum build/test iterations or just-build lint-repair turns (default uses the run's persisted cap)" })),
+	maxIterations: Type.Optional(Type.Number({ description: "Maximum build/test iterations or just-build quality-repair turns (default uses the run's persisted cap)" })),
 	resetIteration: Type.Optional(Type.Boolean({ description: "Reset the iteration budget when resuming a maxed-out run", default: false })),
 });
 
@@ -323,7 +323,7 @@ export default function oneForAllExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("b", {
-		description: "Run the focused just-build workflow with a required lint gate; add --docs for a final Docs-agent phase",
+		description: "Run the focused just-build workflow with required quality gates; add --docs for a final Docs-agent phase",
 		handler: startBCommand,
 	});
 
@@ -351,21 +351,21 @@ export default function oneForAllExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("pbt-lint-setup", {
-		description: "Start an in-session agent turn that inspects and configures the required PBT lint check",
+		description: "Start an in-session agent turn that inspects and configures the required PBT quality profile",
 		handler: async (args, ctx) => {
 			const force = args.trim() === "--force";
 			if (args.trim() && !force) {
 				ctx.ui.notify("Usage: /pbt-lint-setup [--force]", "warning");
 				return;
 			}
-			const configPath = path.join(ctx.cwd, LINT_CONFIG_PATH);
+			const configPath = path.join(ctx.cwd, QUALITY_CONFIG_PATH);
 			if (fs.existsSync(configPath) && !force) {
-				ctx.ui.notify(`${LINT_CONFIG_PATH} already exists. Use /pbt-lint-setup --force to inspect and reconfigure it.`, "warning");
+				ctx.ui.notify(`${QUALITY_CONFIG_PATH} already exists. Use /pbt-lint-setup --force to inspect and reconfigure it.`, "warning");
 				return;
 			}
 			// A user message makes this a visible, interruptible turn in the current
 			// session. The user can use Pi's normal interrupt/steer/follow-up controls.
-			pi.sendUserMessage(buildLintSetupTask(force));
+			pi.sendUserMessage(buildQualitySetupTask(force));
 		},
 	});
 
@@ -388,7 +388,7 @@ export default function oneForAllExtension(pi: ExtensionAPI) {
 				...formatWorkflowCatalog(loadWorkflowDefinitions(ctx.cwd)),
 				"",
 				"PBT workflow commands:",
-				"  /pbt-lint-setup [--force] — inspect the project and configure its required lint check",
+				"  /pbt-lint-setup [--force] — inspect the project and configure its required quality profile",
 				"  /pbt [--interactive] [--docs] <request> — plan/build/test; --docs runs the final Docs-agent phase",
 				"  /b [--docs] <request> — focused build, required lint, and optional final Docs-agent phase",
 				"  /doc — visibly inspect, update, and clean docs/ in this current session",

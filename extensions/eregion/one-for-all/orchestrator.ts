@@ -49,13 +49,13 @@ import { finishReport } from "./report.js";
 import { isHerdrTuiEnabled } from "./herdr.js";
 import { resolveSubagentEfforts, resolveSubagentModels, runSubagent, type SubagentEfforts, type SubagentModels, type SubagentRole } from "./subagent.js";
 import { activeRuns, assertPlanOutputsExist, createRunId, saveState } from "./state.js";
-import type { AgentResult, IssueLedgerEntry, LintRun, PhaseHandoff, ProgressEvent, RunControl, TestIssue, WorkflowState } from "./types.js";
+import type { AgentResult, IssueLedgerEntry, PhaseHandoff, ProgressEvent, QualityRun, RunControl, TestIssue, WorkflowState } from "./types.js";
 import { ensureDirectory } from "./util.js";
 import { askClarifications, updateUI } from "./ui.js";
 import { attachDesignReviewAssets, ensureDesignPreviewServer, initializeDesignReview, openDesignPreview, readApproval, readDesignFeedback, readReviewAction, resetReviewRequest } from "./design-review.js";
 import { projectAgentPath } from "../package-paths.js";
 import { refreshOpenRouterModels } from "../openrouter-dynamic-models/index.js";
-import { readLintConfig, renderLintFailure, runLintCommand, type LintConfig } from "./lint.js";
+import { readQualityConfig, renderQualityFailure, runQualityCommand, type QualityConfig } from "./quality.js";
 import { runDocumentationPhase } from "./documentation.js";
 
 export async function runWorkflow(
@@ -175,7 +175,12 @@ export async function runWorkflow(
 	saveState(cwd, state, pi);
 	updateUI(ctx, state);
 
-	// The dynamic OpenRouter extension normally refreshes only when the model
+	try {
+		const qualityConfig = readQualityConfig(cwd);
+		state.qualityProfile = { commands: qualityConfig.commands, required: qualityConfig.required };
+		saveState(cwd, state, pi);
+
+		// The dynamic OpenRouter extension normally refreshes only when the model
 	// selector opens. A workflow may name a newly released model directly, so
 	// refresh before resolving subagent pins instead of silently falling back to
 	// the durable default because the local snapshot is stale. Keep this here so
@@ -304,44 +309,47 @@ export async function runWorkflow(
 		},
 	});
 
-	let lintConfig: LintConfig | undefined;
 	const runLintGate = async (
 		stage: "build" | "test-authoring" | "test-verification",
 		iteration: number,
 		repair: (diagnostics: string, repairAttempt: number) => Promise<void>,
 	): Promise<void> => {
-		if (!lintConfig) throw new Error("Project lint configuration was not loaded");
+		if (!qualityConfig) throw new Error("Project quality profile was not loaded");
 		for (let attempt = 1; attempt <= MAX_LINT_REPAIR_ATTEMPTS + 1; attempt++) {
 			if (controller.signal.aborted) throw new Error("Workflow aborted");
-			const phase = `${stage} lint`;
+			const phase = `${stage} quality`;
 			state.phase = phase;
 			state.status = "running";
-			state.latestOutput = `Running project lint command: ${lintConfig.command}`;
-			appendProgress(cwd, state, { timestamp: Date.now(), agent: "lint", phase, kind: "started", message: `Running configured lint command (attempt ${attempt})`, details: lintConfig.command });
+			state.latestOutput = `Running required project quality commands: ${qualityConfig.required.join(", ")}`;
+			appendProgress(cwd, state, { timestamp: Date.now(), agent: "quality", phase, kind: "started", message: `Running ${qualityConfig.required.length} required quality command(s) (attempt ${attempt})`, details: qualityConfig.required.join(", ") });
 			saveState(cwd, state, pi);
 			updateUI(ctx, state);
 
-			const result = await runLintCommand(cwd, lintConfig, controller.signal);
-			const lintRun: LintRun = { ...result, stage, iteration, attempt, completedAt: Date.now(), iterationCycle: currentCycle };
-			state.lintRuns = [...(state.lintRuns || []), lintRun];
-			appendProgress(cwd, state, {
-				timestamp: lintRun.completedAt,
-				agent: "lint",
-				phase,
-				kind: result.exitCode === 0 ? "completed" : "failed",
-				message: result.exitCode === 0 ? "Project lint passed" : `Project lint failed with exit code ${result.exitCode}`,
-				details: result.exitCode === 0 ? result.command : renderLintFailure(result).slice(0, 2_000),
-			});
-			saveState(cwd, state, pi);
-			updateUI(ctx, state, result.exitCode === 0 ? "Project lint passed" : renderLintFailure(result));
-			if (result.exitCode === 0) return;
-
-			const diagnostics = renderLintFailure(result);
-			if (attempt > MAX_LINT_REPAIR_ATTEMPTS) {
-				throw new Error(`Project lint still fails after ${MAX_LINT_REPAIR_ATTEMPTS} repair attempt(s); workflow cannot advance.\n${diagnostics}`);
+			const results: QualityRun[] = [];
+			for (const name of qualityConfig.required) {
+				const result = await runQualityCommand(cwd, name, qualityConfig.commands[name], qualityConfig.timeoutMs, controller.signal);
+				const qualityRun: QualityRun = { ...result, stage, iteration, attempt, completedAt: Date.now(), iterationCycle: currentCycle };
+				results.push(qualityRun);
+				state.qualityRuns = [...(state.qualityRuns || []), qualityRun];
+				appendProgress(cwd, state, {
+					timestamp: qualityRun.completedAt,
+					agent: "quality",
+					phase,
+					kind: result.exitCode === 0 ? "completed" : "failed",
+					message: result.exitCode === 0 ? `Quality command ${name} passed` : `Quality command ${name} failed with exit code ${result.exitCode}`,
+					details: result.exitCode === 0 ? result.command : renderQualityFailure(result).slice(0, 2_000),
+				});
 			}
-			state.phase = `${stage} lint repair`;
-			state.latestOutput = `Sending lint failure to the ${stage === "build" ? "builder" : "tester"} in its persistent session`;
+			saveState(cwd, state, pi);
+			const failed = results.filter((result) => result.exitCode !== 0);
+			if (failed.length === 0) return;
+
+			const diagnostics = failed.map(renderQualityFailure).join("\n\n");
+			if (attempt > MAX_LINT_REPAIR_ATTEMPTS) {
+				throw new Error(`Required project quality commands still fail after ${MAX_LINT_REPAIR_ATTEMPTS} repair attempt(s); workflow cannot advance.\n${diagnostics}`);
+			}
+			state.phase = `${stage} quality repair`;
+			state.latestOutput = `Sending quality-gate failures to the ${stage === "build" ? "builder" : "tester"} in its persistent session`;
 			saveState(cwd, state, pi);
 			updateUI(ctx, state, diagnostics);
 			await repair(diagnostics, attempt);
@@ -413,11 +421,6 @@ export async function runWorkflow(
 			throw verificationError;
 		}
 	};
-
-	try {
-		lintConfig = readLintConfig(cwd);
-		state.lintCommand = lintConfig.command;
-		saveState(cwd, state, pi);
 
 		// DPBT interactive mode is intentionally scoped to the design phase. The
 		// approved design gives the planner a concrete specification, so DPBT

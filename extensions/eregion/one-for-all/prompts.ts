@@ -99,25 +99,25 @@ export function buildPlanRecoveryTask(paths: PlanPaths, validationError: string)
 /**
  * The focused `/b` workflow deliberately skips planning and testing. It uses
  * the normal persistent Builder and handoff contract, then lets the
- * orchestrator run the project lint command programmatically.
+ * orchestrator run every required project quality command programmatically.
  */
 export function buildJustBuildTask(request: string): string {
 	return [
 		`Implement this focused request: ${request}`,
 		"This is the just-build workflow: inspect the repository and implement the request directly. There is no plan artifact, tester, or test-verification phase.",
 		"Do not create, modify, or delete tests, and do not run tests. Track every production artifact and key implementation decision.",
-		"After your handoff, the orchestrator will run the configured project lint command. If it fails, you will receive its exact diagnostics in this same persistent Builder session.",
+		"After your handoff, the orchestrator will run every required project quality command directly. If any fail, you will receive their exact machine-captured diagnostics in this same persistent Builder session.",
 		handoffRule,
 	].join("\n\n");
 }
 
-/** Repair a `/b` lint failure in the same persistent Builder session. */
+/** Repair a `/b` quality-gate failure in the same persistent Builder session. */
 export function buildJustBuildLintRepairTask(diagnostics: string, attempt: number): string {
 	return [
-		`Fix the project lint failure from just-build lint repair turn ${attempt}.`,
-		`Lint command output (authoritative diagnostics):\n${diagnostics}`,
-		"Continue in this same Builder session. Correct only the reported lint findings, preserve runtime behavior, and do not weaken, skip, or delete tests.",
-		"Do not run lint or tests yourself; the orchestrator reruns the configured lint command after this handoff and cannot complete until it passes.",
+		`Fix the required project quality-command failure from just-build repair turn ${attempt}.`,
+		`Quality command output (authoritative diagnostics):\n${diagnostics}`,
+		"Continue in this same Builder session. Correct only the reported quality findings, preserve runtime behavior, and do not weaken, skip, or delete tests.",
+		"Do not run quality commands or tests yourself; the orchestrator reruns every required quality command after this handoff and cannot complete until all pass.",
 		handoffRule,
 	].join("\n\n");
 }
@@ -170,26 +170,26 @@ export function buildCompletionTask(ledger: IssueLedgerEntry[], iteration: numbe
 	].join("\n\n");
 }
 
-/** Repair one lint failure in the persistent Builder session. */
+/** Repair one quality-gate failure in the persistent Builder session. */
 export function buildLintRepairTask(diagnostics: string, iteration: number, issue?: TestIssue): string {
 	return [
-		`Fix the project lint failure from build iteration ${iteration} using the configured project lint command.`,
+		`Fix the required project quality-command failure from build iteration ${iteration}.`,
 		...(issue ? [`The active tester issue is still in scope and must remain fixed: ${renderIssue(issue)}`] : []),
-		`Lint command output (authoritative diagnostics):\n${diagnostics}`,
-		"Fix only the lint findings shown by this output. Preserve runtime behavior and test meaning; do not weaken, skip, or delete tests. The orchestrator will rerun lint and will not advance until it exits successfully.",
+		`Quality command output (authoritative diagnostics):\n${diagnostics}`,
+		"Fix only the quality findings shown by this output. Preserve runtime behavior and test meaning; do not weaken, skip, or delete tests. The orchestrator will rerun every required quality command and will not advance until all exit successfully.",
 		issue
-			? `Return exactly one issueUpdates entry for ${issue.id}; use fixed only after addressing both the reported issue and these lint findings, otherwise unresolved.`
-			: "Report the files changed and lint corrections in the build handoff.",
+			? `Return exactly one issueUpdates entry for ${issue.id}; use fixed only after addressing both the reported issue and these quality findings, otherwise unresolved.`
+			: "Report the files changed and quality corrections in the build handoff.",
 		handoffRule,
 	].join("\n\n");
 }
 
-/** Repair lint issues in test artifacts without starting test commands during authoring. */
+/** Repair quality issues in test artifacts without starting test commands during authoring. */
 export function buildTestAuthoringLintRepairTask(diagnostics: string): string {
 	return [
-		"The orchestrator's project lint command failed after your test-authoring turn.",
-		`Lint command output (authoritative diagnostics):\n${diagnostics}`,
-		"Continue in this persistent tester session. Correct only lint findings in test files or test configuration that you authored/modified; do not change production code or weaken test behavior. Do not run lint or tests in this authoring repair turn; the orchestrator will rerun lint before verification.",
+		"The orchestrator's required project quality commands failed after your test-authoring turn.",
+		`Quality command output (authoritative diagnostics):\n${diagnostics}`,
+		"Continue in this persistent tester session. Correct only quality findings in test files or test configuration that you authored/modified; do not change production code or weaken test behavior. Do not run quality commands or tests in this authoring repair turn; the orchestrator will rerun all required quality commands before verification.",
 		"Return a corrected authoring handoff with testStage=authoring, a testStrategy, and every authored/modified test artifact.",
 		handoffRule,
 	].join("\n\n");
@@ -214,15 +214,15 @@ export function buildTestAuthoringTask(
 	].join("\n\n");
 }
 
-/** Repair verification-owned lint findings, then rerun the same verification suites. */
+/** Repair verification-owned quality findings, then rerun the same verification suites. */
 export function buildTestVerificationLintRepairTask(diagnostics: string, previous: PhaseHandoff): string {
 	const priorResults = JSON.stringify({ status: previous.status, testRuns: previous.testRuns, issues: previous.issues });
 	return [
-		"The orchestrator's project lint command failed after your verification turn.",
-		`Lint command output (authoritative diagnostics):\n${diagnostics}`,
-		"Continue in this persistent tester session. Correct only lint findings in test files or test configuration; do not change production code or weaken, skip, or delete tests. Then rerun the same authored and relevant existing suites so the verification handoff reflects the current files.",
+		"The orchestrator's required project quality commands failed after your verification turn.",
+		`Quality command output (authoritative diagnostics):\n${diagnostics}`,
+		"Continue in this persistent tester session. Correct only quality findings in test files or test configuration; do not change production code or weaken, skip, or delete tests. Then rerun the same authored and relevant existing suites so the verification handoff reflects the current files.",
 		`Prior verification results (preserve stable issue IDs for failures that remain):\n${priorResults}`,
-		"Return a fresh testStage=verification handoff with status, captured testRuns, and actionable issues. The orchestrator will rerun lint and will not advance until it exits successfully.",
+		"Return a fresh testStage=verification handoff with status, captured testRuns, and actionable issues. The orchestrator will rerun every required quality command and will not advance until all exit successfully.",
 		handoffRule,
 	].join("\n\n");
 }

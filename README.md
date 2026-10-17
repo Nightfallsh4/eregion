@@ -52,6 +52,7 @@ pi -e /path/to/eregion
   provider/model via `models` and given its own Pi reasoning level via `efforts`
   (defaults to `high`; see `extensions/eregion/one-for-all/docs.md`)
 - `skills/` — PBT plus the shared UI/UX, security, wallet, and related skills
+- `prompts/brainstorm.md` — the `/brainstorm` command for a read-only, question-led product or application ideation session that writes its final brief to `docs/idea/` only on explicit finalisation
 - `third_party/superpowers/` — vendored Superpowers v7.0.0 skills and its Pi startup/bootstrap extension; upstream source and license are recorded in `UPSTREAM.md`
 - `themes/` — LOTR and retro gaming themes
 - `config/models.json` — optional custom model registry snapshot
@@ -63,40 +64,48 @@ configuration. A project can still override agents/workflows by creating
 
 ### Conversation manner
 
-Every session that loads `eregion` receives a composed, formal English-butler
-conversation style: the agent addresses the user as “Sir” when natural, keeps
-its humour dry and understated, and remains direct about technical risks and
-errors. The package adds this as an independent system-prompt section, so it
-does not replace Pi's built-in instructions, project context, or your own
+Every session that loads `eregion` receives the composed manner of a formal
+English butler and capable personal AI assistant: the agent addresses the user
+as “Sir” when natural, uses brief, dry, good-natured sarcasm and witty jokes
+where appropriate, proactively surfaces useful next steps and risks, and
+remains direct about technical errors. Its humour is never aimed at the user or
+used to trivialise serious failures. The package adds this as an independent
+system-prompt section, so it does not replace Pi's built-in instructions,
+project context, or your own
 `APPEND_SYSTEM.md` guidance. Reload Pi with `/reload` (or start a new session)
 after updating the package.
 
-Before running PBT, DPBT, or just-build in a project, configure its quality command once:
+Before running PBT, DPBT, or just-build in a project, configure its quality profile once:
 
 ```text
 /pbt-lint-setup
 ```
 
-The command starts a visible, interruptible lint-setup turn in the current Pi
-session. The agent inspects the repository, chooses or reuses the appropriate
-project-local linter, creates its configuration and package/task script, and
-writes the command to `.pi/lint.json`. You can interrupt it or provide more
-context using Pi's normal controls. Build and test phases run that command as
-a required gate, routing failures back to the persistent phase agent before
-proceeding. Run `/pbt-lint-setup --force` to re-evaluate an existing setup.
+The command name remains for compatibility, but it starts a visible,
+interruptible quality-setup turn in the current Pi session. The agent inspects
+the repository, chooses or reuses reproducible project-local format, lint,
+type-check, build, test, and other applicable commands, and writes
+`.pi/quality.json`. The profile maps command names to shell commands and lists
+the commands required for completion. You can interrupt it or provide more
+context using Pi's normal controls. The orchestrator executes every required
+command itself at each quality barrier, captures its output, and routes
+failures to the persistent phase agent before proceeding. Run
+`/pbt-lint-setup --force` to re-evaluate an existing profile.
+
+PBT and DPBT reserve paired Builder and Tester plans under `acache/plans/`. The Planner must create both before the orchestrator starts Build/Test; invalid or missing output is returned to the Planner for correction. Builder reads only its implementation plan, while Tester reads only its scenario checklist and clears its conditions through passing verification. Normal workflow cleanup preserves both plans for inspection.
 
 For small, direct changes use `/b <request>`. Just-build skips planning and
 separate test authoring/verification: one persistent Builder implements the
-request, then the orchestrator runs the configured lint command. Every lint
-failure is returned to that same Builder session for a focused repair before
-lint is rerun. Use `/b-status`, `/b-inspect`, `/b-resume`, `/b-stop`, and
-`/b-cleanup` for the corresponding run controls. `/flow b <request>` and
-`pbt_start` with `workflow: "b"` are equivalent entry points. See
-`extensions/eregion/one-for-all/docs.md` for details.
+request, then the orchestrator runs every required quality-profile command.
+Failures are returned to that same Builder session for a focused repair before
+all required commands are rerun. Use `/b-status`, `/b-inspect`, `/b-resume`,
+`/b-stop`, and `/b-cleanup` for the corresponding run controls. `/flow b
+<request>` and `pbt_start` with `workflow: "b"` are equivalent entry points.
+See `extensions/eregion/one-for-all/docs.md` for details.
 
 ### Documentation maintenance
 
-Add `--docs` to a workflow to run a final, isolated Docs-agent phase **only after its required test and lint gates pass**:
+Add `--docs` to a workflow to run a final, isolated Docs-agent phase **only after its required Tester and orchestrator-owned quality gates pass**:
 
 ```text
 /pbt --docs <request>
