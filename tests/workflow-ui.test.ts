@@ -200,6 +200,15 @@ test("running widgets cannot expand from multiline errors, long ledgers, or wide
 	}
 });
 
+test("PBT status and final reports show both role-specific plan artifacts", () => {
+	const state = failedState();
+	state.builderPlanPath = "acache/plans/builder-plan-display.md";
+	state.testerPlanPath = "acache/plans/tester-plan-display.md";
+	assert.match(inspectState(state, os.tmpdir()), /Builder plan: acache\/plans\/builder-plan-display\.md/);
+	assert.match(buildFinalReport(state), /Builder plan: acache\/plans\/builder-plan-display\.md/);
+	assert.match(buildFinalReport(state), /Tester plan: acache\/plans\/tester-plan-display\.md/);
+});
+
 test("aborted and other terminal states leave a compact widget", () => {
 	for (const status of ["aborted", "completed", "max-iterations-reached", "plateau-reached"] as const) {
 		const { ctx, getWidget } = makeContext();

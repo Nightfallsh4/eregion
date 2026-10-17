@@ -20,7 +20,7 @@ The extension exposes a workflow catalog. Use `/flows` to inspect available defi
         ▼
    index.ts  ──►  orchestrator.ts (PBT/DPBT) or build-orchestrator.ts (`/b`)
         │              │
-        │              ├── plan-paths.ts   reserve plan-<slug>.md
+        │              ├── plan-paths.ts   reserve paired builder/tester plans
         │              ├── subagent.ts     run child pi sessions
         │              ├── herdr.ts        create/control visible Herdr pi tabs
         │              ├── prompts.ts      build per-phase task text
@@ -82,7 +82,7 @@ provided, it continues the existing run instead of creating a new one:
 
 1. Create run ID + run dir under `acache/workflow-runs/<run-id>/`.
 2. DPBT only: the Designer creates an isolated static preview under `<run-dir>/design-preview/`. Its built-in localhost review panel supports click-to-annotate comments, general comments, **Request changes**, and explicit **Approve design**. The orchestrator waits at this approval gate, gives newly saved feedback to the persistent Designer for revisions, and writes approved design decisions to `<run-dir>/design-decisions.md`.
-3. Reserve the feature-named plan path (`plan-paths.ts`).
+3. Reserve paired feature-named Builder and Tester plan paths (`plan-paths.ts`); validate both planner outputs before Build/Test starts and return invalid outputs to the persistent Planner for correction.
 3. Register the run in `activeRuns` and wire abort-signal relaying.
 4. **Clarification and plan loops** — PBT's interactive variant parses
    `clarification_request` output from the planner and asks the user via
@@ -251,12 +251,8 @@ conflict.
   from the request rather than truncating the whole sentence ("make a directory
   called to-do and create a to-do app" → `to-do-app`), normalizes it to
   kebab-case, and caps it at `MAX_SLUG_LENGTH`.
-- `reservePlanPath(cwd, request)` — creates a zero-byte `acache/plans/plan-<slug>.md`
-  placeholder (`wx` flag) plus an in-memory reservation set, closing races
-  both within this process and against other processes. Appends `-2`, `-3`,
-  … on collision.
-- `releasePlanReservation` — frees the in-memory slot; the orchestrator
-  deletes the placeholder on disk if the planner never filled it.
+- `reservePlanPaths(cwd, request)` — atomically creates zero-byte `acache/plans/builder-plan-<slug>.md` and `tester-plan-<slug>.md` placeholders plus in-memory reservations. A collision on either advances both names to the same `-2`, `-3`, … suffix.
+- `releasePlanReservations` — frees both in-memory slots; the orchestrator deletes only empty placeholders if the planner never filled them. Completed plans remain inspectable after normal cleanup.
 
 ### `cleanup.ts` — resource cleanup
 

@@ -51,7 +51,7 @@ export function updateUI(ctx: ExtensionContext | ExtensionCommandContext, state:
 	const latestLintRun = state.lintRuns?.filter((run) => (run.iterationCycle || 0) === cycle).at(-1);
 	const lines = [
 		`┌─ Workflow: ${state.runId} ───────────────────────────────`,
-		`│ ${justBuild ? "⏳" : plan ? "✓" : "⏳"} ${state.workflowId || state.workflowName} ${justBuild ? "(just build)" : state.interactive ? "(interactive)" : "(simple)"}${justBuild ? " · one Builder phase" : `  ${state.planPath}`}`,
+		`│ ${justBuild ? "⏳" : plan ? "✓" : "⏳"} ${state.workflowId || state.workflowName} ${justBuild ? "(just build)" : state.interactive ? "(interactive)" : "(simple)"}${justBuild ? " · one Builder phase" : `  ${state.builderPlanPath || state.planPath}`}`, 
 		...(design ? [`│ ${design.approvedAt ? "✓" : "⏳"} design review ${design.status} · revision ${design.revision}${design.previewUrl ? ` · ${design.previewUrl}` : ""}`] : []),
 		`│ ${build ? "✓" : "⏳"} build ${build ? `(iteration ${build.iteration})` : "(waiting)"}`,
 		...(justBuild ? [] : [
@@ -64,7 +64,7 @@ export function updateUI(ctx: ExtensionContext | ExtensionCommandContext, state:
 		`│ Lint: ${latestLintRun ? `${latestLintRun.exitCode === 0 ? "passed" : "failed"} · ${latestLintRun.stage} (attempt ${latestLintRun.attempt})` : truncate(state.lintCommand || "not configured", 80)}`,
 		...(justBuild ? [] : [
 			`│ Issue ledger: ${state.issueLedger?.length ? state.issueLedger.map((entry) => `${entry.issue.id}=${entry.status}`).join(", ") : "none"}`,
-			`│ Questions answered: ${state.answers.length} · Plan: ${state.planPath}`,
+			`│ Questions answered: ${state.answers.length} · Builder: ${state.builderPlanPath || state.planPath} · Tester: ${state.testerPlanPath || "legacy plan"}`, 
 		]),
 	];
 	if (state.currentAgent) lines.push(`│ Active: ${state.currentAgent} · ${truncate(state.currentActivity || "working", 90)}`);

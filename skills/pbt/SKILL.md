@@ -66,8 +66,8 @@ The LLM can also call `pbt_start` with `request` and optional
 
 ## What happens
 
-1. The orchestrator reserves a deterministic feature-named `plan-*.md` path.
-2. The planner writes only that artifact and returns a structured handoff.
+1. The orchestrator reserves deterministic feature-named Builder and Tester plan paths in `acache/plans/`.
+2. The planner writes both role-specific artifacts and returns a structured handoff; the orchestrator verifies both before Build/Test proceeds. Builder reads only its implementation plan, while Tester reads only its scenario/checklist plan and clears its conditions through passing verification.
 3. When started from a Herdr-managed pi pane, every subagent gets a detached,
    background Herdr **tab** running a visible pi TUI. The planner, builder, and
    tester each have their own tab; persistent planner/builder/tester turns

@@ -130,7 +130,11 @@ export function summarizeState(state: WorkflowState): string {
 	return [
 		`${state.runId} · ${state.status} · ${justBuild ? "just-build" : state.interactive ? "interactive" : "simple"}`,
 		`request: ${state.request}`,
-		justBuild ? "plan: not used (single Builder phase)" : `plan: ${state.planPath}`,
+		justBuild
+			? "plan: not used (single Builder phase)"
+			: state.builderPlanPath && state.testerPlanPath
+				? `Builder plan: ${state.builderPlanPath}\nTester plan: ${state.testerPlanPath}`
+				: `plan: ${state.planPath}`, 
 		justBuild
 			? `build turns: 1; lint-repair limit: ${state.maxLintRepairs || 0} (budget cycle ${state.iterationCycle || 0})`
 			: `iteration: ${state.iteration}/${state.maxIterations} (budget cycle ${state.iterationCycle || 0})`,

@@ -22,7 +22,11 @@ export function buildFinalReport(state: WorkflowState): string {
 		`- Run: ${state.runId}`,
 		`- Workflow: ${state.workflowId || state.workflowName}`,
 		`- Variant: ${justBuild ? "just-build" : state.interactive ? "interactive" : "simple"}`,
-		...(justBuild ? ["- Plan: not used (single Builder phase)"] : [`- Plan: ${state.planPath}`]),
+		...(justBuild
+			? ["- Plan: not used (single Builder phase)"]
+			: state.builderPlanPath && state.testerPlanPath
+				? [`- Builder plan: ${state.builderPlanPath}`, `- Tester plan: ${state.testerPlanPath}`]
+				: [`- Plan: ${state.planPath}`]),
 		...(state.documentationRequested ? [`- Documentation phase: ${state.handoffs.some((handoff) => handoff.phase === "documentation") ? "completed" : "requested but not completed"}`] : []),
 		...(state.design ? [`- Design review: ${state.design.status}, revision ${state.design.revision}${state.design.previewUrl ? ` (${state.design.previewUrl})` : ""}`, `- Design decisions: ${state.design.decisionPath}`] : []),
 		...(justBuild ? [`- Build turns: 1; lint-repair limit: ${state.maxLintRepairs || 0} (budget cycle ${state.iterationCycle || 0})`] : [`- Iterations: ${state.iteration}/${state.maxIterations} (budget cycle ${state.iterationCycle || 0})`]),
@@ -99,7 +103,7 @@ export function finishReport(pi: ExtensionAPI, ctx: ExtensionContext | Extension
 	// dismissed on resume. The replaceable widget and report message already
 	// show stopped-run diagnostics, so only announce successful completion.
 	if (ctx.hasUI && state.status === "completed") {
-		const destination = state.workflowName === "b" || state.workflowId === "b" ? "lint passed" : state.planPath;
+		const destination = state.workflowName === "b" || state.workflowId === "b" ? "lint passed" : state.builderPlanPath && state.testerPlanPath ? `plans: ${state.builderPlanPath}, ${state.testerPlanPath}` : state.planPath;
 		ctx.ui.notify(compactErrorMessage(`Workflow completed: ${destination}`), "info");
 	}
 }
