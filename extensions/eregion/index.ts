@@ -9,6 +9,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import oneForAll from "./one-for-all/index.js";
 import clarify from "./clarify/index.js";
 import openRouterDynamicModels from "./openrouter-dynamic-models/index.js";
+import butlerPersona from "./global/butler-persona.js";
 import guardrails from "./global/guardrails.js";
 import piAscii from "./global/pi-ascii.js";
 import planOnly from "./global/plan-only.js";
@@ -16,6 +17,10 @@ import sessionDefaultModel from "./global/session-default-model.js";
 import { missingGlobalExtensionNames, missingPackageExtensionNames, missingSkillPaths } from "./resources.js";
 
 export default function eregion(pi: ExtensionAPI): void {
+	// A package feature rather than a fallback: every eregion session receives
+	// the same conversational manner, while retaining Pi's normal prompt.
+	butlerPersona(pi);
+
 	// Global installs may still leave an older project-local copy behind. In that
 	// case the package entrypoint must not register its equivalent again.
 	const projectExtensions = new Set(missingPackageExtensionNames(process.cwd()));

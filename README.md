@@ -43,7 +43,8 @@ pi -e /path/to/eregion
 
 - `extensions/eregion/index.ts` — one package entrypoint that loads the
   one-for-all workflow, clarification, OpenRouter dynamic models, guardrails,
-  plan-only mode, custom header, and session default model behavior
+  plan-only mode, custom header, session default model behavior, and the
+  formal English-butler conversation manner
 - `agents/` — planner, builder, tester, designer, and Docs-agent prompts used by
   PBT/DPBT and the focused just-build workflow
 - `workflows/` — PBT, DPBT, and just-build workflow definitions; each subagent role
@@ -59,6 +60,16 @@ The package resolves its bundled agents and workflow definitions from its own
 installed location, so it works even when the consuming project has no `.pi/`
 configuration. A project can still override agents/workflows by creating
 `.pi/agents/` or `.pi/workflows/` files.
+
+### Conversation manner
+
+Every session that loads `eregion` receives a composed, formal English-butler
+conversation style: the agent addresses the user as “Sir” when natural, keeps
+its humour dry and understated, and remains direct about technical risks and
+errors. The package adds this as an independent system-prompt section, so it
+does not replace Pi's built-in instructions, project context, or your own
+`APPEND_SYSTEM.md` guidance. Reload Pi with `/reload` (or start a new session)
+after updating the package.
 
 Before running PBT, DPBT, or just-build in a project, configure its quality command once:
 
