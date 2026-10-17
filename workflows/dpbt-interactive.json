@@ -5,6 +5,16 @@
   "runner": "dpbt",
   "description": "Ask focused product/design questions during design; then approve, plan, build, and test.",
   "interactive": true,
+  "models": {
+    "default": "openai/gpt-5.6-terra",
+    "designer": "openai/gpt-6.1-sol",
+    "planner": "openai/gpt-6.1-sol",
+    "builder": "openai/gpt-5.6-terra",
+    "tester": "openai/gpt-5.6-terra"
+  },
+  "efforts": {
+    "default": "high"
+  },
   "design": {
     "agent": "designer",
     "clarify": "designer-requested-rounds",

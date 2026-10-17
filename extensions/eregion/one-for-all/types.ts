@@ -44,6 +44,15 @@ export interface TestRun {
 	stderr: string;
 }
 
+export interface LintRun extends TestRun {
+	stage: "build" | "test-authoring" | "test-verification";
+	iteration: number;
+	attempt: number;
+	completedAt: number;
+	/** Budget cycle that produced this lint result; absent on older runs (cycle 0). */
+	iterationCycle?: number;
+}
+
 export interface IssueResolution {
 	issueId: string;
 	status: "fixed" | "unresolved";
@@ -73,7 +82,7 @@ export interface ClarificationRequest {
 }
 
 export interface PhaseHandoff {
-	phase: "design" | "plan" | "build" | "test";
+	phase: "design" | "plan" | "build" | "test" | "documentation";
 	iteration: number;
 	summary: string;
 	artifacts: ArtifactEntry[];
@@ -146,6 +155,12 @@ export interface WorkflowState {
 	handoffs: PhaseHandoff[];
 	iteration: number;
 	maxIterations: number;
+	/**
+	 * Just-build (`/b`) runs have one implementation turn rather than a
+	 * build/test iteration loop. This limits the number of lint-repair turns
+	 * the same persistent Builder may receive after that turn.
+	 */
+	maxLintRepairs?: number;
 	/** Increments when a maxed-out run is resumed with a fresh iteration budget. */
 	iterationCycle?: number;
 	status:
@@ -181,6 +196,16 @@ export interface WorkflowState {
 	/** Present only for Design → Plan → Build → Test runs. */
 	design?: DesignReviewState;
 	lastResumedAt?: number;
+	/** Resolved provider/model per subagent role (planner/designer/builder/tester) for this run. */
+	agentModels?: Record<string, string>;
+	/** Resolved Pi thinking/reasoning level per subagent role for this run. */
+	agentEfforts?: Record<string, string>;
+	/** Whether this run must finish with the optional documentation maintenance phase. */
+	documentationRequested?: boolean;
+	/** Project-specific lint command captured when this run starts. */
+	lintCommand?: string;
+	/** Every post-build and post-test lint check, including failed repair attempts. */
+	lintRuns?: LintRun[];
 }
 
 export interface ProgressEvent {

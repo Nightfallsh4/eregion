@@ -5,6 +5,16 @@
   "runner": "dpbt",
   "description": "Create an isolated, reviewable design mockup; explicitly approve it; then plan, build, and test against that design.",
   "interactive": false,
+  "models": {
+    "default": "openai/gpt-5.6-terra",
+    "designer": "openai/gpt-6.1-sol",
+    "planner": "openai/gpt-6.1-sol",
+    "builder": "openai/gpt-5.6-terra",
+    "tester": "openai/gpt-5.6-terra"
+  },
+  "efforts": {
+    "default": "high"
+  },
   "design": {
     "agent": "designer",
     "review": "static-local-preview-with-click-annotations",

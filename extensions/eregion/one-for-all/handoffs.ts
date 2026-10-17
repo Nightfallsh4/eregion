@@ -7,6 +7,7 @@
  * can reuse the same handoff format.
  */
 
+import * as fs from "node:fs";
 import { MAX_PROMPT_HANDOFF_LENGTH } from "./constants.js";
 import type {
 	AgentResult,
@@ -327,6 +328,97 @@ export function requireHandoff(result: AgentResult, phase: PhaseHandoff["phase"]
 		);
 	}
 	return parseHandoff(result.output, phase, iteration) || fallbackHandoff(result.output, phase, iteration, planPath);
+}
+
+/**
+ * Re-read a subagent's persisted session JSONL from disk and return the text of
+ * the LAST complete assistant message. This is an authoritative source that is
+ * independent of the live tailer/`AgentResult.output` capture, which can drop a
+ * trailing handoff record if it was still being written when the agent settled.
+ */
+export async function readLatestAssistantText(sessionPath: string, maxWaitMs = 2_000): Promise<string> {
+	let lastText = "";
+	let stableReads = 0;
+	const deadline = Date.now() + maxWaitMs;
+	while (Date.now() < deadline) {
+		let text = "";
+		try {
+			const size = fs.statSync(sessionPath).size;
+			const descriptor = fs.openSync(sessionPath, "r");
+			try {
+				const buffer = Buffer.alloc(size);
+				fs.readSync(descriptor, buffer, 0, size, 0);
+				const lines = buffer.toString("utf8").split("\n");
+				for (let i = lines.length - 1; i >= 0; i--) {
+					const line = lines[i].trim();
+					if (!line) continue;
+					let entry: unknown;
+					try {
+						entry = JSON.parse(line);
+					} catch {
+						continue;
+					}
+					if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) continue;
+					const role = entry.message.role;
+					if (role !== "assistant") continue;
+					const assistant = getAssistantMessageFrom(entry.message as { role: string; content?: unknown });
+					if (assistant) {
+						text = assistant;
+						break;
+					}
+				}
+			} finally {
+				fs.closeSync(descriptor);
+			}
+		} catch {
+			// Session file may not exist/be readable yet; retry until the deadline.
+		}
+		if (text && text === lastText) {
+			stableReads += 1;
+			if (stableReads >= 2) return lastText;
+		} else {
+			stableReads = 0;
+		}
+		if (text) lastText = text;
+		await new Promise<void>((resolve) => setTimeout(resolve, 250));
+	}
+	return lastText;
+}
+
+/** Normalize a string built from an assistant Message content part. */
+function getAssistantMessageFrom(message: { role: string; content?: unknown }): string {
+	const content = message.content;
+	if (message.role !== "assistant" || !Array.isArray(content)) return "";
+	return content
+		.filter((part): part is { type: "text"; text: string } => isRecord(part) && part.type === "text" && typeof part.text === "string")
+		.map((part) => part.text)
+		.join("\n");
+}
+
+/**
+ * Re-parse a captured AgentResult, falling back to the persisted session file
+ * when the captured output lost the trailing handoff. Unlike plain
+ * `requireHandoff`, this prefers a parseable handoff over a fallback bash when
+ * the exit code path is healthy but the tailer dropped the final JSON record.
+ */
+export async function verifyWithSessionFallback(
+	result: AgentResult,
+	phase: PhaseHandoff["phase"],
+	iteration: number,
+	sessionPath: string,
+	planPath?: string,
+): Promise<PhaseHandoff> {
+	if (result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted" || result.stopReason === "timeout") {
+		return requireHandoff(result, phase, iteration, planPath);
+	}
+	// Prefer the last complete assistant record from the session file, which is
+	// authoritative and independent of the live capture that may have raced.
+	const recovered = await readLatestAssistantText(sessionPath);
+	if (recovered) {
+		const parsed = parseHandoff(recovered, phase, iteration);
+		if (parsed) return parsed;
+	}
+	return requireHandoff(result, phase, iteration, planPath);
 }
 
 export function validateAuthoringHandoff(handoff: PhaseHandoff): void {

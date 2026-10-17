@@ -5,6 +5,15 @@
   "runner": "pbt",
   "description": "Feature-named plan, parallel test authoring/build, and a persistent verification/fix loop",
   "interactive": false,
+  "models": {
+    "default": "openai/gpt-5.6-terra",
+    "planner": "openai/gpt-6.1-sol",
+    "builder": "openai/gpt-5.6-terra",
+    "tester": "openai/gpt-5.6-terra"
+  },
+  "efforts": {
+    "default": "high"
+  },
   "plan": {
     "agent": "planner-simple",
     "tools": ["read", "grep", "find", "ls", "bash", "write"],

@@ -1,0 +1,30 @@
+{
+  "name": "b",
+  "workflow": "b",
+  "variant": "just-build",
+  "runner": "build",
+  "description": "Build a focused request, then run the required lint gate and return findings to the same persistent Builder session.",
+  "interactive": false,
+  "models": {
+    "default": "openai/gpt-5.6-terra",
+    "builder": "openai/gpt-5.6-terra"
+  },
+  "efforts": {
+    "default": "high"
+  },
+  "build": {
+    "agent": "builder",
+    "tools": ["edit", "write", "read", "bash", "grep", "find", "ls"],
+    "session": "persistent"
+  },
+  "lint": {
+    "required": true,
+    "runAfter": "build",
+    "repairAgent": "builder",
+    "session": "persistent"
+  },
+  "loop": {
+    "maxIterations": 3,
+    "purpose": "maximum lint-repair turns after the single build turn"
+  }
+}

@@ -15,15 +15,22 @@ When the request or plan touches a frontend, UI, or user-facing interaction, act
 
 ## Rules
 
-- Read the exact feature-named `planPath` supplied by the orchestrator.
+- When the task supplies a feature-named `planPath`, read that exact plan before implementing. The focused just-build (`/b`) workflow intentionally has no plan artifact; inspect the repository and implement its request directly instead.
 - Implement production changes carefully and follow repository conventions.
 - During the initial implementation, do not create, modify, or delete tests;
   the tester owns test authoring.
 - Do NOT run tests during the build phase. Verification is performed by the
   tester after the builder-complete barrier.
+- When the orchestrator supplies a project lint failure, fix only the reported
+  lint findings in the same persistent session before continuing. A lint repair
+  may touch the specifically named production or test files, but must preserve
+  runtime behavior and test meaning. Do not run tests or claim the quality gate
+  passed; the orchestrator reruns the configured command.
 - During an issue-fix turn, fix the single issue supplied by the orchestrator.
   This may require a production change or, when the issue explicitly concerns
-  a stale test assertion/configuration, a narrowly scoped test correction.
+  a stale test assertion/configuration, a narrowly scoped test correction. A
+  separate orchestrator lint-repair handoff also authorizes changes only to test
+  files named by its lint diagnostics.
   This fix-turn instruction supersedes the initial test-authoring ownership
   rule; do not mark a routed issue unresolved merely because it is under
   tests/. Never change unrelated tests or issues.
@@ -36,11 +43,12 @@ When the request or plan touches a frontend, UI, or user-facing interaction, act
 ## Fix iteration workflow (iterations > 1)
 
 When this is **not** the first build invocation, the orchestrator reuses this
-persistent session and sends only the next issue to fix. The request, plan,
-previous handoffs, and issue history are already in this conversation; do not
-ask the orchestrator to resend them or restate them in your response. The
-durable issue ledger is persisted in `state.json`, but it is intentionally not
-pasted into every prompt.
+persistent session. In plan-build-test runs it sends only the next tester issue
+to fix; in just-build (`/b`) runs it sends only the project lint diagnostics.
+The request, any plan, previous handoffs, and issue history are already in this
+conversation; do not ask the orchestrator to resend them or restate them in
+your response. The durable issue ledger is persisted in `state.json`, but it is
+intentionally not pasted into every prompt.
 
 The orchestrator invokes you once per ledger entry, in order. Every
 non-environment issue is sent to you, including issues whose metadata says

@@ -62,6 +62,8 @@ identify:
 Never weaken, delete, skip, or rewrite a failing test just to make it pass. If
 implementation conflicts with the plan, report that conflict.
 
+When the orchestrator supplies a lint failure during authoring, correct only the reported findings in test files or test configuration you authored; do not change production code or test meaning. Do not run lint or tests during that authoring repair—the orchestrator runs the lint command. During verification, a lint-repair turn may also ask you to fix reported test-file lint findings and rerun the same relevant suites before returning an updated verification handoff.
+
 On later invocations, continue in the same persistent session without asking
 for the request, plan, authoring strategy, or prior verification to be resent.
 The orchestrator sends only a compact builder-barrier delta; use current files

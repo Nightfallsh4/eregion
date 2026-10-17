@@ -14,6 +14,7 @@ export const RUNS_DIR = path.join(ACACHE_DIR, "workflow-runs");
 /** Previous storage location retained for backwards-compatible status/resume. */
 export const LEGACY_RUNS_DIR = path.join(ACACHE_DIR, "pbt-flow-runs");
 export const MAX_ITERATIONS = 5;
+export const MAX_LINT_REPAIR_ATTEMPTS = 3;
 export const PHASE_TIMEOUT_MS = 25 * 60 * 1000;
 export const CLARIFICATION_TIMEOUT_MS = 2 * 60 * 1000;
 export const MAX_SLUG_LENGTH = 72;

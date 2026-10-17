@@ -4,55 +4,39 @@ import {
   type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 
-// New pi sessions and child instances start here. A model selected by the user
-// is kept in the current session, while this default remains unchanged.
-const DEFAULT_PROVIDER = "openrouter";
-const DEFAULT_MODEL = "openai/gpt-5.6-luna";
-
-function restoreNewSessionDefault(cwd: string): void {
-  const settings = SettingsManager.create(cwd);
-  const global = settings.getGlobalSettings();
-
-  if (
-    global.defaultProvider !== DEFAULT_PROVIDER ||
-    global.defaultModel !== DEFAULT_MODEL
-  ) {
-    settings.setDefaultModelAndProvider(DEFAULT_PROVIDER, DEFAULT_MODEL);
-  }
+function hasExplicitModelArgument(): boolean {
+  const args = process.argv.slice(2);
+  return args.some((arg) => arg === "--model" || arg.startsWith("--model="));
 }
 
-async function selectNewSessionDefault(
+async function selectSavedDefault(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
 ): Promise<void> {
-  const model = ctx.modelRegistry.find(DEFAULT_PROVIDER, DEFAULT_MODEL);
+  // Pi persists the model selected with Ctrl+S in its global settings. Do not
+  // replace that choice with a package-specific model when creating /new.
+  const settings = SettingsManager.create(ctx.cwd).getGlobalSettings();
+  if (!settings.defaultProvider || !settings.defaultModel) return;
+
+  const model = ctx.modelRegistry.find(
+    settings.defaultProvider,
+    settings.defaultModel,
+  );
   if (!model || !ctx.modelRegistry.hasConfiguredAuth(model)) return;
 
   await pi.setModel(model);
-  restoreNewSessionDefault(ctx.cwd);
 }
 
 export default function sessionDefaultModelExtension(pi: ExtensionAPI): void {
   pi.on("session_start", async (event, ctx) => {
-    // New/forked sessions are created by reusing the runtime's initial model
-    // in some pi versions. Explicitly select the configured default there.
-    // Resumed sessions are deliberately left alone so their saved model wins.
-    if (event.reason === "new" || event.reason === "fork") {
-      await selectNewSessionDefault(pi, ctx);
-    } else {
-      // Repair any default left behind by an older pi session, including the
-      // current global default if it was changed before this extension existed.
-      restoreNewSessionDefault(ctx.cwd);
-    }
-  });
-
-  pi.on("model_select", async (event, ctx) => {
-    // pi normally persists /model and Ctrl+P selections as the next global
-    // default. Wait for pi's own queued settings write, then put the durable
-    // default back without touching the active model in this session.
-    if (event.source === "set" || event.source === "cycle") {
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      restoreNewSessionDefault(ctx.cwd);
+    // Some Pi versions reuse the runtime's initial model for /new and forks.
+    // Reapply the user's saved default only for those fresh sessions; resumed
+    // sessions retain the model recorded in their own history.
+    if (
+      (event.reason === "new" || event.reason === "fork") &&
+      !hasExplicitModelArgument()
+    ) {
+      await selectSavedDefault(pi, ctx);
     }
   });
 }

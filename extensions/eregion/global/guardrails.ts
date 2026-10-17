@@ -10,25 +10,25 @@
  *    (e.g., .env, .env.*, SSH keys, credentials) even inside the working
  *    directory, the user is asked for permission.
  *
- * Exception: **pi's own install directory** (the @mariozechner/pi-coding-agent
- * package root — docs, examples, source) is always readable without prompts.
- * Read-only operations (read/ls/grep/find tools, read-only bash commands like
- * cat/ls/grep/find, cd) are auto-allowed. Any write, edit, or output
- * redirection into pi's install directory still requires permission.
+ * Exception: **pi's own install directory** (the @earendil-works/pi-coding-agent
+ * package root — docs, examples, source) is always accessible without prompts,
+ * including writes, edits, and output redirection.
  *
- * Exception: **always-safe paths** — /dev/null (exact) and everything under
- * /tmp (prefix) never prompt. Caveat: because /tmp is world-writable and any
- * local process can plant a file there, *executing* a file from /tmp (via an
- * interpreter like bash/python/node, or directly) still requires permission.
+ * Exception: **always-safe paths** — /dev/null (exact), everything under /tmp
+ * (prefix), and pi's install directory never prompt. Caveat: because /tmp is
+ * world-writable and any local process can plant a file there, *executing* a
+ * file from /tmp (via an interpreter like bash/python/node, or directly) still
+ * requires permission.
  *
  * For each interception the user can:
  *   - Allow this once
  *   - Allow and don't ask again this session (remembers the path until restart)
+ *   - Allow and add the path to the project or global whitelist
  *   - Reject (blocks just this operation)
  *   - Reject and stop execution (blocks and gracefully shuts down pi)
  *
  * If the user hasn't responded within 10 seconds, a desktop notification
- * fires as a reminder. Permissions are per-operation and reset on session restart.
+ * fires as a reminder. Session permissions reset on restart; whitelists persist.
  */
 
 import {
@@ -36,8 +36,9 @@ import {
 	isToolCallEventType,
 } from "@mariozechner/pi-coding-agent";
 import { resolve, normalize, basename, dirname, join } from "node:path";
-import { realpathSync, existsSync, readFileSync } from "node:fs";
-import { exec } from "node:child_process";
+import { realpathSync, existsSync, readFileSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+import { homedir } from "node:os";
+import { readGuardrailRelay, requestGuardrailPermission, selectGuardrailPermission } from "./guardrails-relay.js";
 
 // ─────────────────────────────────────────────────────
 // Sensitive file patterns
@@ -85,6 +86,10 @@ const SENSITIVE_FILE_PATTERNS: Array<{
 		match: (fullPath, _fileName) => /\/\.docker\/config\.json$/.test(fullPath),
 	},
 	{
+		name: "Guardrails settings",
+		match: (fullPath) => fullPath === globalWhitelistFile() || /\/\.pi\/guardrails\.json$/.test(fullPath) || fullPath.endsWith(".jsonl.guardrails-relay.json"),
+	},
+	{
 		name: "Guardrails extension",
 		match: (fullPath, _fileName) =>
 			/\/\.pi\/extensions\/guardrails\//.test(fullPath),
@@ -112,10 +117,63 @@ const ALWAYS_SAFE_PATHS: Array<{ path: string; prefix: boolean }> = [
 	// Prefix match covers everything under it. NOTE: executing files
 	// from /tmp is still gated separately (see analyzeBashCommand).
 	{ path: "/tmp", prefix: true },
+	// The installed pi package is explicitly trusted by the user, including
+	// writes and edits. Prefix match covers the package and its contents.
+	{ path: "/usr/lib/node_modules/@earendil-works/pi-coding-agent", prefix: true },
 ];
 
 /** Paths the user approved for the remainder of this session. */
 const sessionApprovedPaths = new Set<string>();
+
+// Keep guardrails configuration separate from pi's own settings.json so it
+// cannot be overwritten by Pi's settings writer. Entries are absolute paths;
+// approving a directory also approves its descendants.
+function globalWhitelistFile(): string {
+	return resolve(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "guardrails.json");
+}
+
+function whitelistFile(scope: "global" | "project", cwd: string): string {
+	return scope === "global" ? globalWhitelistFile() : join(cwd, ".pi", "guardrails.json");
+}
+
+function readWhitelist(file: string): string[] {
+	if (!existsSync(file)) return [];
+	const data: unknown = JSON.parse(readFileSync(file, "utf8"));
+	if (!data || typeof data !== "object" || !Array.isArray((data as { whitelist?: unknown }).whitelist) ||
+		!(data as { whitelist: unknown[] }).whitelist.every((path) => typeof path === "string" && path.startsWith("/") && normalize(path) === path)) {
+		throw new Error(`Invalid guardrails whitelist in ${file}: expected { "whitelist": [absolute paths] }`);
+	}
+	return (data as { whitelist: string[] }).whitelist;
+}
+
+function addWhitelistedPath(scope: "global" | "project", path: string, cwd: string): void {
+	const file = whitelistFile(scope, cwd);
+	const whitelist = readWhitelist(file);
+	const absolute = resolve(cwd, path);
+	if (whitelist.includes(absolute)) return;
+	whitelist.push(absolute);
+	mkdirSync(dirname(file), { recursive: true });
+	const temporary = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+	try {
+		writeFileSync(temporary, JSON.stringify({ whitelist }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+		renameSync(temporary, file);
+	} catch (error) {
+		try { unlinkSync(temporary); } catch { /* Nothing to clean up */ }
+		throw error;
+	}
+}
+
+function isApproved(absolutePath: string, cwd: string): boolean {
+	const normalized = normalize(absolutePath);
+	for (const path of [
+		...sessionApprovedPaths,
+		...readWhitelist(globalWhitelistFile()),
+		...readWhitelist(whitelistFile("project", cwd)),
+	]) {
+		if (normalized === path || normalized.startsWith(path === "/" ? path : path + "/")) return true;
+	}
+	return false;
+}
 
 function isAlwaysSafe(absolutePath: string): boolean {
 	const normalized = normalize(absolutePath);
@@ -127,12 +185,12 @@ function isAlwaysSafe(absolutePath: string): boolean {
 }
 
 // ─────────────────────────────────────────────────────
-// Pi install directory — read-only access is always allowed
+// Pi install directory — all access is always allowed
 // ─────────────────────────────────────────────────────
 
 /**
  * Resolve the directory where pi itself is installed (the package root of
- * @mariozechner/pi-coding-agent). Determined by following the real path of
+ * @earendil-works/pi-coding-agent). Determined by following the real path of
  * the running CLI entry point and walking up to its package.json.
  * Returns null if it cannot be determined.
  */
@@ -146,7 +204,10 @@ function resolvePiInstallDir(): string | null {
 			if (existsSync(pkgPath)) {
 				try {
 					const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-					if (pkg.name === "@mariozechner/pi-coding-agent") {
+					if (
+						pkg.name === "@earendil-works/pi-coding-agent" ||
+						pkg.name === "@mariozechner/pi-coding-agent"
+					) {
 						return normalize(dir);
 					}
 				} catch {
@@ -198,24 +259,6 @@ function isSkillPath(absolutePath: string): boolean {
 	return false;
 }
 
-/**
- * Check if this path (or any parent directory of it) was approved by the user
- * for this session. Uses prefix matching so approving a directory covers all
- * files and subdirectories within it.
- */
-function isSessionApproved(absolutePath: string): boolean {
-	const normalized = normalize(absolutePath);
-	// Exact match first (fast path)
-	if (sessionApprovedPaths.has(normalized)) return true;
-	// Prefix match — walk up the path looking for an approved parent
-	for (const approved of sessionApprovedPaths) {
-		if (normalized === approved) continue; // already checked above
-		// Check if the approved path is a parent of this path
-		if (normalized.startsWith(approved + "/")) return true;
-	}
-	return false;
-}
-
 /** Remember this path for the rest of the session. */
 function addSessionApprovedPath(absolutePath: string): void {
 	sessionApprovedPaths.add(normalize(absolutePath));
@@ -257,7 +300,7 @@ function inspectPathExemptApproved(path: string, cwd: string): PathInfo | null {
 	// Skill files and skill directories
 	if (isSkillPath(absolute)) return null;
 	// Paths the user already approved this session
-	if (isSessionApproved(absolute)) return null;
+	if (isApproved(absolute, cwd)) return null;
 	const outside = !isInsideCwd(absolute, cwd);
 	const sensitive = isSensitiveFile(absolute);
 	return { absolute, outside, sensitive };
@@ -282,15 +325,6 @@ const FILE_OPS = new Set([
 const LIST_OPS = new Set([
 	"ls", "dir", "find", "grep", "rg", "ag", "ack", "fd", "tree",
 	"which", "type",
-]);
-
-/**
- * File-op commands that only read, never modify. These are allowed to access
- * pi's own install directory without a permission prompt.
- */
-const READ_ONLY_FILE_OPS = new Set([
-	"cat", "head", "tail", "diff", "file", "stat", "wc",
-	"md5sum", "sha1sum", "sha256sum",
 ]);
 
 interface BashIssue {
@@ -322,10 +356,12 @@ function analyzeBashCommand(command: string, cwd: string): BashIssue | null {
 		const resolved = resolve(cwd, arg);
 		// Always-safe paths (e.g. /dev/null)
 		if (isAlwaysSafe(resolved)) return null;
+		// Any installed pi package path is explicitly trusted.
+		if (isPiInstallPath(resolved)) return null;
 		// Skill files and skill directories
 		if (isSkillPath(resolved)) return null;
 		// Paths the user already approved this session
-		if (isSessionApproved(resolved)) return null;
+		if (isApproved(resolved, cwd)) return null;
 		const { absolute, outside, sensitive } = inspectPath(arg, cwd);
 		if (outside) return { type: "outside", path: absolute, description: "outside working directory" };
 		if (sensitive) return { type: "sensitive", path: absolute, description: `sensitive file: ${sensitive}` };
@@ -352,7 +388,7 @@ function analyzeBashCommand(command: string, cwd: string): BashIssue | null {
 				const resolved = resolve(cwd, target);
 				if (isSkillPath(resolved)) continue;
 				if (isPiInstallPath(resolved)) continue;
-				if (isSessionApproved(resolved)) continue;
+				if (isApproved(resolved, cwd)) continue;
 				const { absolute, outside } = inspectPath(target, cwd);
 				if (outside) {
 					return { type: "outside", path: absolute, description: "outside working directory" };
@@ -371,20 +407,13 @@ function analyzeBashCommand(command: string, cwd: string): BashIssue | null {
 
 		// Only act if the argument itself looks like a path we care about
 		if (arg.startsWith("/") || arg.startsWith("../")) {
-			// Read-only commands may freely access pi's own install directory
-			if (
-				READ_ONLY_FILE_OPS.has(token) &&
-				isPiInstallPath(resolve(cwd, arg))
-			) {
-				continue;
-			}
 			const result = checkArg(arg);
 			if (result) return result;
 		} else {
 			// Relative path — check for sensitive files within cwd
 			const resolved = resolve(cwd, arg);
 			const sensitive = isSensitiveFile(resolved);
-			if (sensitive) {
+			if (sensitive && !isApproved(resolved, cwd)) {
 				return { type: "sensitive", path: resolved, description: `sensitive file: ${sensitive}` };
 			}
 		}
@@ -401,7 +430,7 @@ function analyzeBashCommand(command: string, cwd: string): BashIssue | null {
 		if (isAlwaysSafe(resolved)) continue;
 		if (isSkillPath(resolved)) continue;
 		if (isPiInstallPath(resolved)) continue;
-		if (isSessionApproved(resolved)) continue;
+		if (isApproved(resolved, cwd)) continue;
 
 		const { absolute, outside } = inspectPath(arg, cwd);
 		if (outside) {
@@ -423,7 +452,7 @@ function analyzeBashCommand(command: string, cwd: string): BashIssue | null {
 		// Interpreter followed by a /tmp script: `bash /tmp/x.sh`, `python3 /tmp/x.py`
 		if (INTERPRETERS.has(token)) {
 			const script = firstRealArgAfter(i);
-			if (script && script.startsWith("/tmp/")) {
+			if (script && script.startsWith("/tmp/") && !isApproved(resolve(cwd, script), cwd)) {
 				return {
 					type: "tmp-exec",
 					path: resolve(cwd, script),
@@ -433,7 +462,7 @@ function analyzeBashCommand(command: string, cwd: string): BashIssue | null {
 		}
 		// Direct execution in command position: `/tmp/x.sh`, `cmd && /tmp/x.sh`
 		if (
-			token.startsWith("/tmp/") &&
+			token.startsWith("/tmp/") && !isApproved(resolve(cwd, token), cwd) &&
 			(i === 0 || SHELL_OPERATORS.has(tokens[i - 1]))
 		) {
 			return {
@@ -454,7 +483,7 @@ function analyzeBashCommand(command: string, cwd: string): BashIssue | null {
 		} else {
 			const resolved = resolve(cwd, target);
 			const sensitive = isSensitiveFile(resolved);
-			if (sensitive) {
+			if (sensitive && !isApproved(resolved, cwd)) {
 				return { type: "sensitive", path: resolved, description: `sensitive file: ${sensitive}` };
 			}
 		}
@@ -474,15 +503,11 @@ interface AccessCheck {
 	description: string;
 }
 
-function checkPath(
-	path: string,
-	cwd: string,
-	access: "read" | "write" = "read",
-): AccessCheck | null {
+function checkPath(path: string, cwd: string): AccessCheck | null {
 	if (!path) return null;
-	// Read-only access to pi's own install directory is always allowed.
-	// Writes/edits into it still require permission.
-	if (access === "read" && isPiInstallPath(resolve(cwd, path))) return null;
+	// Any detected pi installation, including the explicit system install path
+	// above, is always safe for both reads and writes.
+	if (isPiInstallPath(resolve(cwd, path))) return null;
 	const info = inspectPathExemptApproved(path, cwd);
 	if (!info) return null;
 	const { absolute, outside, sensitive } = info;
@@ -510,6 +535,23 @@ function checkPath(
 // ─────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+	pi.registerCommand("guardrails-allow", {
+		description: "Add a path to the project or global guardrails whitelist: /guardrails-allow project|global <path>",
+		handler: async (args, ctx) => {
+			const match = args.trim().match(/^(project|global)\s+(.+)$/s);
+			if (!match || !match[2].trim()) {
+				ctx.ui.notify("Usage: /guardrails-allow project|global <path>", "warning");
+				return;
+			}
+			try {
+				addWhitelistedPath(match[1] as "project" | "global", match[2].trim(), ctx.cwd);
+				ctx.ui.notify(`Added ${resolve(ctx.cwd, match[2].trim())} to the ${match[1]} guardrails whitelist.`, "info");
+			} catch (error) {
+				ctx.ui.notify(`Could not update guardrails whitelist: ${String(error)}`, "error");
+			}
+		},
+	});
+
 	pi.on("tool_call", async (event, ctx) => {
 		// --- read tool ---
 		if (isToolCallEventType("read", event)) {
@@ -525,7 +567,7 @@ export default function (pi: ExtensionAPI) {
 		if (isToolCallEventType("write", event)) {
 			const path = event.input.path;
 			if (path) {
-				const check = checkPath(path, ctx.cwd, "write");
+				const check = checkPath(path, ctx.cwd);
 				if (check) return await promptUser(ctx, "Write file", check);
 			}
 			return undefined;
@@ -535,7 +577,7 @@ export default function (pi: ExtensionAPI) {
 		if (isToolCallEventType("edit", event)) {
 			const path = event.input.path;
 			if (path) {
-				const check = checkPath(path, ctx.cwd, "write");
+				const check = checkPath(path, ctx.cwd);
 				if (check) return await promptUser(ctx, "Edit file", check);
 			}
 			return undefined;
@@ -596,40 +638,8 @@ export default function (pi: ExtensionAPI) {
 }
 
 // ─────────────────────────────────────────────────────
-// System notification
+// User prompt (workflow children relay this selector to their parent)
 // ─────────────────────────────────────────────────────
-
-function sendSystemNotification(title: string, body: string): void {
-	switch (process.platform) {
-		case "linux": {
-			const esc = (s: string) => s.replace(/'/g, "'\\''");
-			exec(`notify-send '${esc(title)}' '${esc(body)}'`, (err) => {
-				if (err) {
-					exec(`echo 'Guardrails: ${esc(body)}' | wall 2>/dev/null`, () => {});
-				}
-			});
-			break;
-		}
-		case "darwin": {
-			const s = `display notification "${body.replace(/"/g, '\\"')}" with title "${title.replace(/"/g, '\\"')}"`;
-			exec(`osascript -e '${s}'`, () => {});
-			break;
-		}
-		case "win32": {
-			exec('msg * "Guardrails: Permission needed" 2>nul', () => {});
-			break;
-		}
-		default: {
-			exec(`notify-send '${title.replace(/'/g, "'\\''")}' '${body.replace(/'/g, "'\\''")}' 2>/dev/null`, () => {});
-		}
-	}
-}
-
-// ─────────────────────────────────────────────────────
-// User prompt
-// ─────────────────────────────────────────────────────
-
-const NOTIFY_DELAY_MS = 10_000;
 
 async function promptUser(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -659,29 +669,23 @@ async function promptUser(
 		`"Allow" permits this operation once.`,
 	].join("\n");
 
-	if (!ctx.hasUI) {
-		return {
-			block: true,
-			reason: `Guardrails: ${operationDescription} blocked — ${reasonLabel} (non-interactive mode)`,
-		};
+	let choice: string | undefined;
+	try {
+		const relay = readGuardrailRelay(ctx.sessionManager?.getSessionFile?.());
+		if (relay) {
+			// Route before checking hasUI: JSON-mode children have no local UI.
+			choice = await requestGuardrailPermission(relay, promptText, ctx.signal);
+		} else if (ctx.hasUI) {
+			choice = await selectGuardrailPermission(ctx, promptText);
+		} else {
+			return {
+				block: true,
+				reason: `Guardrails: ${operationDescription} blocked — ${reasonLabel} (non-interactive mode)`,
+			};
+		}
+	} catch {
+		return { block: true, reason: "Guardrails: parent permission prompt unavailable; operation blocked." };
 	}
-
-	// Schedule a desktop notification if the user hasn't responded in 10 seconds.
-	const notifyTimeout = setTimeout(() => {
-		sendSystemNotification(
-			"Guardrails: Permission Needed",
-			`${operationDescription} — ${reasonLabel}`,
-		);
-	}, NOTIFY_DELAY_MS);
-
-	const choice = await ctx.ui.select(promptText, [
-		"Allow this once",
-		"Allow and don't ask again this session",
-		"Reject",
-		"Reject and stop execution",
-	]);
-
-	clearTimeout(notifyTimeout);
 
 	if (choice === "Allow this once") {
 		return undefined;
@@ -692,6 +696,17 @@ async function promptUser(
 			addSessionApprovedPath(p);
 		}
 		return undefined;
+	}
+
+	if (choice === "Allow and add path to project whitelist" || choice === "Allow and add path to global whitelist") {
+		try {
+			const scope = choice === "Allow and add path to project whitelist" ? "project" : "global";
+			for (const path of check.offendingPaths) addWhitelistedPath(scope, path, ctx.cwd);
+			return undefined;
+		} catch (error) {
+			ctx.ui.notify(`Could not update guardrails whitelist: ${String(error)}`, "error");
+			return { block: true, reason: "Guardrails: whitelist update failed; operation blocked." };
+		}
 	}
 
 	if (choice === "Reject") {

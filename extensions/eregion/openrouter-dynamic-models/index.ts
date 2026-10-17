@@ -321,6 +321,30 @@ async function fetchOpenRouterModels(): Promise<ProviderModelConfig[] | null> {
 
 // ─── Extension ───────────────────────────────────────────────────────────────
 
+function registerOpenRouterModels(pi: ExtensionAPI, models: ProviderModelConfig[]): void {
+	pi.registerProvider("openrouter", {
+		name: "OpenRouter",
+		baseUrl: "https://openrouter.ai/api/v1",
+		apiKey: "OPENROUTER_API_KEY",
+		api: "openai-completions",
+		authHeader: true,
+		models,
+	});
+}
+
+/**
+ * Refresh the registry immediately for a workflow that names a model which is
+ * not present or authenticated in the local models.json snapshot. The model selector also uses
+ * this refresh, but workflow commands must not depend on the user having
+ * opened that selector first.
+ */
+export async function refreshOpenRouterModels(pi: ExtensionAPI): Promise<boolean> {
+	const models = await fetchOpenRouterModels();
+	if (!models || models.length === 0) return false;
+	registerOpenRouterModels(pi, models);
+	return true;
+}
+
 export default function (pi: ExtensionAPI) {
 	// Keep a cached copy of the last successfully fetched models
 	// so we can restore them if a subsequent fetch fails
@@ -336,28 +360,14 @@ export default function (pi: ExtensionAPI) {
 		const models = await fetchOpenRouterModels();
 		if (models && models.length > 0) {
 			lastSuccessfulModels = models;
-			pi.registerProvider("openrouter", {
-				name: "OpenRouter",
-				baseUrl: "https://openrouter.ai/api/v1",
-				apiKey: "OPENROUTER_API_KEY",
-				api: "openai-completions",
-				authHeader: true,
-				models,
-			});
+			registerOpenRouterModels(pi, models);
 			return true;
 		}
 
 		// Fetch failed — if we have cached models, re-register with those
 		if (lastSuccessfulModels && lastSuccessfulModels.length > 0) {
 			console.error("[openrouter-dynamic] Using cached models (fetch failed)");
-			pi.registerProvider("openrouter", {
-				name: "OpenRouter",
-				baseUrl: "https://openrouter.ai/api/v1",
-				apiKey: "OPENROUTER_API_KEY",
-				api: "openai-completions",
-				authHeader: true,
-				models: lastSuccessfulModels,
-			});
+			registerOpenRouterModels(pi, lastSuccessfulModels);
 			return true;
 		}
 

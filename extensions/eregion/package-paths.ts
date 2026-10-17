@@ -15,19 +15,6 @@ export function projectAgentPath(cwd: string, agentName: string): string {
 	return requireFileOrPackageFallback(projectPath, packagePath("agents", agentName));
 }
 
-export function projectWorkflowsPath(cwd: string): string {
-	const projectPath = path.join(cwd, ".pi", "workflows");
-	return hasJsonFile(projectPath) ? projectPath : packagePath("workflows");
-}
-
-function hasJsonFile(directory: string): boolean {
-	try {
-		return fs.readdirSync(directory).some((entry: string) => entry.endsWith(".json"));
-	} catch {
-		return false;
-	}
-}
-
 function requireFileOrPackageFallback(projectPath: string, packageFile: string): string {
 	try {
 		if (fs.statSync(projectPath).isFile()) return projectPath;

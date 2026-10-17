@@ -18,10 +18,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { MAX_ITERATIONS, RUNS_DIR, WORKFLOW_NAME } from "./constants.js";
+import { MAX_ITERATIONS, MAX_LINT_REPAIR_ATTEMPTS, RUNS_DIR, WORKFLOW_NAME } from "./constants.js";
 import {
 	detectPlateau,
 	parseClarificationRequest,
+	parseHandoff,
+	readLatestAssistantText,
 	requireHandoff,
 	validateAuthoringHandoff,
 	validateVerificationHandoff,
@@ -31,22 +33,28 @@ import { appendProgress } from "./progress.js";
 import {
 	buildCompletionTask,
 	buildInitialBuildTask,
+	buildLintRepairTask,
 	buildIssueFixRetryTask,
 	buildIssueFixTask,
 	buildDesignTask,
 	buildPlanTask,
 	buildTestAuthoringTask,
+	buildTestAuthoringLintRepairTask,
+	buildTestVerificationLintRepairTask,
 	buildTestVerificationTask,
 } from "./prompts.js";
 import { finishReport } from "./report.js";
 import { isHerdrTuiEnabled } from "./herdr.js";
-import { getSubagentModel, runSubagent } from "./subagent.js";
+import { resolveSubagentEfforts, resolveSubagentModels, runSubagent, type SubagentEfforts, type SubagentModels, type SubagentRole } from "./subagent.js";
 import { activeRuns, assertPlanExists, createRunId, saveState } from "./state.js";
-import type { AgentResult, IssueLedgerEntry, PhaseHandoff, ProgressEvent, RunControl, TestIssue, WorkflowState } from "./types.js";
+import type { AgentResult, IssueLedgerEntry, LintRun, PhaseHandoff, ProgressEvent, RunControl, TestIssue, WorkflowState } from "./types.js";
 import { ensureDirectory } from "./util.js";
 import { askClarifications, updateUI } from "./ui.js";
 import { attachDesignReviewAssets, ensureDesignPreviewServer, initializeDesignReview, openDesignPreview, readApproval, readDesignFeedback, readReviewAction, resetReviewRequest } from "./design-review.js";
 import { projectAgentPath } from "../package-paths.js";
+import { refreshOpenRouterModels } from "../openrouter-dynamic-models/index.js";
+import { readLintConfig, renderLintFailure, runLintCommand, type LintConfig } from "./lint.js";
+import { runDocumentationPhase } from "./documentation.js";
 
 export async function runWorkflow(
 	pi: ExtensionAPI,
@@ -59,6 +67,9 @@ export async function runWorkflow(
 	resetIteration = false,
 	workflowId = "pbt-simple",
 	useDesignReview = false,
+	models?: SubagentModels,
+	documentationRequested = false,
+	efforts?: SubagentEfforts,
 ): Promise<WorkflowState> {
 	const cwd = ctx.cwd;
 	const resumed = Boolean(resumeState);
@@ -92,6 +103,7 @@ export async function runWorkflow(
 		completedAt: null,
 		activityLogPath: path.join(runDir, "activity.jsonl"),
 		eventCount: 0,
+		documentationRequested,
 		...(useDesignReview ? { design: { previewDir, decisionPath: path.join(runDir, "design-decisions.md"), status: "drafting", revision: 0, feedback: [] } } : {}),
 	};
 	// A resumed state is the source of truth, but its max-iteration cap can be
@@ -100,6 +112,17 @@ export async function runWorkflow(
 	state.workflowId = state.workflowId || workflowId;
 	state.maxIterations = Math.max(state.maxIterations || 1, Math.max(1, Math.min(20, Math.floor(maxIterations) || MAX_ITERATIONS)));
 	state.iterationCycle = state.iterationCycle || 0;
+	state.documentationRequested = Boolean(state.documentationRequested || documentationRequested);
+	if (resumed) {
+		// A stopped run's diagnostic belongs to the previous attempt. Keep its
+		// handoffs and activity log, but do not display that error as live status
+		// while the resumed attempt is running (even without a budget reset).
+		state.stopReason = undefined;
+		state.failureReason = undefined;
+		state.latestOutput = undefined;
+		state.currentAgent = undefined;
+		state.currentActivity = undefined;
+	}
 	if (resumed && resetIteration) {
 		// Keep the previous cycle's handoffs for history, but start a fresh
 		// iteration budget. The cycle marker prevents old iteration-1 barriers
@@ -108,8 +131,6 @@ export async function runWorkflow(
 		// cycle's initial build into a fix turn.
 		state.iterationCycle++;
 		state.iteration = 0;
-		state.stopReason = undefined;
-		state.failureReason = undefined;
 	}
 	if (useDesignReview && !state.design) state.design = { previewDir, decisionPath: path.join(runDir, "design-decisions.md"), status: "drafting", revision: 0, feedback: [] };
 	state.status = "running";
@@ -117,6 +138,15 @@ export async function runWorkflow(
 	state.resumeCount = (state.resumeCount || 0) + (resumed ? 1 : 0);
 	state.lastResumedAt = resumed ? Date.now() : state.lastResumedAt;
 	state.parentSessionPath = state.parentSessionPath || ctx.sessionManager?.getSessionFile?.() || undefined;
+	const statusNow = Date.now();
+	state.agentStatuses = {
+		...(useDesignReview ? { designer: { status: "waiting" as const, phase: "design", activity: "waiting to start", updatedAt: statusNow } } : {}),
+		planner: { status: "waiting", phase: "plan", activity: "waiting to start", updatedAt: statusNow },
+		builder: { status: "waiting", phase: "build", activity: "waiting to start", updatedAt: statusNow },
+		tester: { status: "waiting", phase: "test", activity: "waiting to start", updatedAt: statusNow },
+		...(state.documentationRequested ? { documentation: { status: "waiting" as const, phase: "documentation", activity: "waiting for successful workflow completion", updatedAt: statusNow } } : {}),
+		...(resumed ? {} : state.agentStatuses || {}),
+	};
 	const controller = new AbortController();
 	const control: RunControl = { state, controller, context: ctx };
 	activeRuns.set(runId, control);
@@ -128,20 +158,38 @@ export async function runWorkflow(
 	saveState(cwd, state, pi);
 	updateUI(ctx, state);
 
-	const subagentModel = getSubagentModel(ctx);
+	// The dynamic OpenRouter extension normally refreshes only when the model
+	// selector opens. A workflow may name a newly released model directly, so
+	// refresh before resolving subagent pins instead of silently falling back to
+	// the durable default because the local snapshot is stale. Keep this here so
+	// slash commands, workflow_start, and resume all get the same behavior.
+	const missingOpenRouterModel = Object.values(models || {}).some((raw) => {
+		const value = raw?.trim();
+		if (!value) return false;
+		const slash = value.indexOf("/");
+		if (slash <= 0 || value.slice(0, slash) !== "openrouter") return false;
+		const model = ctx.modelRegistry.find("openrouter", value.slice(slash + 1));
+		return !model || !ctx.modelRegistry.hasConfiguredAuth(model);
+	});
+	if (missingOpenRouterModel) await refreshOpenRouterModels(pi);
+
+	const subagentModels = resolveSubagentModels(ctx, models);
+	const subagentEfforts = resolveSubagentEfforts(efforts);
+	const modelFor = (role: SubagentRole): string | undefined => subagentModels[role];
+	const effortFor = (role: SubagentRole) => subagentEfforts[role];
 	const herdrTui = isHerdrTuiEnabled();
 	const tui = (agentKey: string, tabLabel: string) => (herdrTui ? { runId, agentKey, tabLabel: useDesignReview ? tabLabel.replace(/^pbt/, "dpbt") : tabLabel, workflowPrefix: useDesignReview ? "dpbt" : "pbt" } : undefined);
-	state.latestOutput = subagentModel
-		? `Subagents (${herdrTui ? "Herdr TUI tabs" : "headless"}): ${subagentModel}`
-		: "Subagents: no authenticated model resolved";
-	const statusNow = Date.now();
-	state.agentStatuses = {
-		...(useDesignReview ? { designer: { status: "waiting" as const, phase: "design", activity: "waiting to start", updatedAt: statusNow } } : {}),
-		planner: { status: "waiting", phase: "plan", activity: "waiting to start", updatedAt: statusNow },
-		builder: { status: "waiting", phase: "build", activity: "waiting to start", updatedAt: statusNow },
-		tester: { status: "waiting", phase: "test", activity: "waiting to start", updatedAt: statusNow },
-		...(state.agentStatuses || {}),
-	};
+	const modelSummary = Object.entries(subagentModels)
+		.map(([role, model]) => `${role}=${model}`)
+		.join(", ");
+	const effortSummary = Object.entries(subagentEfforts)
+		.map(([role, effort]) => `${role}=${effort}`)
+		.join(", ");
+	state.latestOutput = modelSummary
+		? `Subagents (${herdrTui ? "Herdr TUI tabs" : "headless"}): ${modelSummary}; efforts: ${effortSummary}`
+		: `Subagents: no authenticated model resolved; efforts: ${effortSummary}`;
+	state.agentModels = subagentModels;
+	state.agentEfforts = subagentEfforts;
 	saveState(cwd, state, pi);
 	let planHandoff: PhaseHandoff | undefined = state.handoffs.find((handoff) => handoff.phase === "plan");
 	let designHandoff: PhaseHandoff | undefined = state.handoffs.find((handoff) => handoff.phase === "design");
@@ -213,9 +261,12 @@ export async function runWorkflow(
 		saveState(cwd, state, pi, false);
 	}
 
-	const progress = (agentName: string, phase: string) => ({
+	const progress = (agentName: SubagentRole, phase: string) => ({
 		agentName,
 		phase,
+		effort: effortFor(agentName),
+		permissionContext: ctx,
+		permissionWorkflow: useDesignReview ? "DPBT" : "PBT",
 		activityLogPath: state.activityLogPath!,
 		onProgress: (event: ProgressEvent) => {
 			appendProgress(cwd, state, event);
@@ -224,11 +275,55 @@ export async function runWorkflow(
 		},
 	});
 
+	let lintConfig: LintConfig | undefined;
+	const runLintGate = async (
+		stage: "build" | "test-authoring" | "test-verification",
+		iteration: number,
+		repair: (diagnostics: string, repairAttempt: number) => Promise<void>,
+	): Promise<void> => {
+		if (!lintConfig) throw new Error("Project lint configuration was not loaded");
+		for (let attempt = 1; attempt <= MAX_LINT_REPAIR_ATTEMPTS + 1; attempt++) {
+			if (controller.signal.aborted) throw new Error("Workflow aborted");
+			const phase = `${stage} lint`;
+			state.phase = phase;
+			state.status = "running";
+			state.latestOutput = `Running project lint command: ${lintConfig.command}`;
+			appendProgress(cwd, state, { timestamp: Date.now(), agent: "lint", phase, kind: "started", message: `Running configured lint command (attempt ${attempt})`, details: lintConfig.command });
+			saveState(cwd, state, pi);
+			updateUI(ctx, state);
+
+			const result = await runLintCommand(cwd, lintConfig, controller.signal);
+			const lintRun: LintRun = { ...result, stage, iteration, attempt, completedAt: Date.now(), iterationCycle: currentCycle };
+			state.lintRuns = [...(state.lintRuns || []), lintRun];
+			appendProgress(cwd, state, {
+				timestamp: lintRun.completedAt,
+				agent: "lint",
+				phase,
+				kind: result.exitCode === 0 ? "completed" : "failed",
+				message: result.exitCode === 0 ? "Project lint passed" : `Project lint failed with exit code ${result.exitCode}`,
+				details: result.exitCode === 0 ? result.command : renderLintFailure(result).slice(0, 2_000),
+			});
+			saveState(cwd, state, pi);
+			updateUI(ctx, state, result.exitCode === 0 ? "Project lint passed" : renderLintFailure(result));
+			if (result.exitCode === 0) return;
+
+			const diagnostics = renderLintFailure(result);
+			if (attempt > MAX_LINT_REPAIR_ATTEMPTS) {
+				throw new Error(`Project lint still fails after ${MAX_LINT_REPAIR_ATTEMPTS} repair attempt(s); workflow cannot advance.\n${diagnostics}`);
+			}
+			state.phase = `${stage} lint repair`;
+			state.latestOutput = `Sending lint failure to the ${stage === "build" ? "builder" : "tester"} in its persistent session`;
+			saveState(cwd, state, pi);
+			updateUI(ctx, state, diagnostics);
+			await repair(diagnostics, attempt);
+		}
+	};
+
 	const authorTests = async (task: string, activity: string): Promise<{ result: AgentResult; handoff: PhaseHandoff }> => {
 		const run = async (authoringTask: string) => runSubagent({
 			cwd,
 			agentPath: projectAgentPath(cwd, "tester.md"),
-			model: subagentModel,
+			model: modelFor("tester"),
 			task: authoringTask,
 			// Keep bash available when the persistent tester process is first
 			// started. Authoring is still prohibited from using it by the task
@@ -266,7 +361,35 @@ export async function runWorkflow(
 		}
 	};
 
+	const verificationHandoffFor = async (result: AgentResult, iteration: number): Promise<PhaseHandoff> => {
+		try {
+			const handoff = requireHandoff(result, "test", iteration);
+			handoff.testStage = "verification";
+			handoff.iterationCycle = currentCycle;
+			validateVerificationHandoff(handoff);
+			return handoff;
+		} catch (verificationError) {
+			const recovered = await readLatestAssistantText(path.join(runDir, "test.jsonl"));
+			const reparsed = recovered ? parseHandoff(recovered, "test", iteration) : undefined;
+			if (reparsed) {
+				reparsed.testStage = "verification";
+				reparsed.iterationCycle = currentCycle;
+				try {
+					validateVerificationHandoff(reparsed);
+					return reparsed;
+				} catch {
+					// Fall through to the original protocol error.
+				}
+			}
+			throw verificationError;
+		}
+	};
+
 	try {
+		lintConfig = readLintConfig(cwd);
+		state.lintCommand = lintConfig.command;
+		saveState(cwd, state, pi);
+
 		// DPBT interactive mode is intentionally scoped to the design phase. The
 		// approved design gives the planner a concrete specification, so DPBT
 		// never starts planner clarification rounds even when this mode is on.
@@ -293,7 +416,7 @@ export async function runWorkflow(
 					state.status = "running";
 					saveState(cwd, state, pi);
 					const task = buildDesignTask(request, state.design.previewDir, state.answers, Boolean(designInteractive), state.design.revision, newFeedback.length ? JSON.stringify(newFeedback) : undefined);
-					const result = await runSubagent({ cwd, agentPath: projectAgentPath(cwd, "designer.md"), model: subagentModel, task, tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "design.jsonl"), signal: controller.signal, tui: tui("designer", "dpbt design"), onOutput: (output) => updateUI(ctx, state, output), ...progress("designer", `design-${state.design.revision + 1}`) });
+					const result = await runSubagent({ cwd, agentPath: projectAgentPath(cwd, "designer.md"), model: modelFor("designer"), task, tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "design.jsonl"), signal: controller.signal, tui: tui("designer", "dpbt design"), onOutput: (output) => updateUI(ctx, state, output), ...progress("designer", `design-${state.design.revision + 1}`) });
 					const clarification = parseClarificationRequest(result.output, "design");
 					if (designInteractive && state.design.revision === 0 && state.answers.length === 0 && !clarification) {
 						throw new Error("Interactive design discovery must ask clarification questions before creating the mockup");
@@ -360,7 +483,7 @@ export async function runWorkflow(
 			const plannerResult = await runSubagent({
 				cwd,
 				agentPath: plannerPath,
-				model: subagentModel,
+				model: modelFor("planner"),
 				task: `${buildPlanTask(request, planPath, planInteractive ? state.answers : [], planInteractive)}${state.design?.approvedAt ? `\n\nApproved design reference (must be honored): ${state.design.decisionPath}\nIsolated review preview: ${state.design.previewDir}` : ""}`,  
 				tools: ["read", "grep", "find", "ls", "bash", "write"],
 				sessionPath: planInteractive || herdrTui ? path.join(runDir, "planner.jsonl") : undefined,
@@ -428,7 +551,7 @@ export async function runWorkflow(
 					const authorTask = buildTestAuthoringTask(request, planPath, planHandoff, state.iteration, false) + (state.design?.approvedAt ? `\n\nApproved design reference: ${state.design.decisionPath}\nTest the approved user-facing behavior; the preview itself is not application code.` : "");
 					const parallelResults = await Promise.allSettled([
 						runSubagent({
-							cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: subagentModel,
+							cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: modelFor("builder"),
 							task: buildTask, tools: ["edit", "write", "read", "bash", "grep", "find", "ls"],
 							sessionPath: path.join(runDir, "build.jsonl"), signal: controller.signal, tui: tui("builder", "pbt build"),
 							onOutput: (output) => updateUI(ctx, state, output), ...progress("builder", `build-${state.iteration}`),
@@ -447,7 +570,7 @@ export async function runWorkflow(
 					updateUI(ctx, state, authored.result.output);
 				} else if (!existingBuildHandoff) {
 					buildResult = await runSubagent({
-						cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: subagentModel,
+						cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: modelFor("builder"),
 						task: buildTask, tools: ["edit", "write", "read", "bash", "grep", "find", "ls"],
 						sessionPath: path.join(runDir, "build.jsonl"), signal: controller.signal, tui: tui("builder", "pbt build"),
 						onOutput: (output) => updateUI(ctx, state, output), ...progress("builder", `build-${state.iteration}`),
@@ -503,7 +626,7 @@ export async function runWorkflow(
 						// one at a time. Ownership is diagnostic metadata, not a second
 						// prompt route; this keeps the fix barrier deterministic.
 						let fixResult = await runSubagent({
-							cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: subagentModel,
+							cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: modelFor("builder"),
 							task: buildIssueFixTask(entry.issue, state.iteration),
 							tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "build.jsonl"),
 							signal: controller.signal, tui: tui("builder", "pbt build"), onOutput: (output) => updateUI(ctx, state, output),
@@ -515,13 +638,36 @@ export async function runWorkflow(
 						if (fixHandoff.issueUpdates?.length !== 1) throw new Error(`Builder must report exactly one issueUpdate for ${entry.issue.id}`);
 						let update = fixHandoff.issueUpdates?.[0];
 						if (!update || update.issueId !== entry.issue.id) throw new Error(`Builder reported ${update?.issueId || "no issue"} while fixing ${entry.issue.id}`);
+						const lintCheckIssueTurn = async (): Promise<void> => {
+							await runLintGate("build", state.iteration, async (diagnostics) => {
+								fixResult = await runSubagent({
+									cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: modelFor("builder"),
+									task: buildLintRepairTask(diagnostics, state.iteration, entry.issue),
+									tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "build.jsonl"),
+									signal: controller.signal, tui: tui("builder", "pbt build"), onOutput: (output) => updateUI(ctx, state, output),
+									...progress("builder", `build-${state.iteration}-${entry.issue.id}-lint-repair`),
+								});
+								const lintFixHandoff = requireHandoff(fixResult, "build", state.iteration);
+								lintFixHandoff.buildStage = "issue-fix";
+								lintFixHandoff.iterationCycle = currentCycle;
+								if (lintFixHandoff.issueUpdates?.length !== 1 || lintFixHandoff.issueUpdates[0].issueId !== entry.issue.id) {
+									throw new Error(`Builder lint repair must report exactly one issueUpdate for ${entry.issue.id}`);
+								}
+								update = lintFixHandoff.issueUpdates[0];
+								fixHandoff = {
+									...lintFixHandoff,
+									artifacts: [...new Map([...fixHandoff.artifacts, ...lintFixHandoff.artifacts].map((artifact) => [artifact.path, artifact])).values()],
+									decisions: [...fixHandoff.decisions, ...lintFixHandoff.decisions],
+									issueUpdates: [update],
+								};
+							});
+						};
+						await lintCheckIssueTurn();
 						if (update.status === "unresolved") {
-							// A persistent builder may still be following its initial
-							// test-authoring prohibition. Give this same issue one focused
-							// continuation with explicit fix-turn authorization before
-							// failing the run. No other issue is exposed.
+							// Give the same persistent Builder one focused continuation before
+							// failing, and run the lint gate after that turn too.
 							fixResult = await runSubagent({
-								cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: subagentModel,
+								cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: modelFor("builder"),
 								task: buildIssueFixRetryTask(entry.issue, state.iteration),
 								tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "build.jsonl"),
 								signal: controller.signal, tui: tui("builder", "pbt build"), onOutput: (output) => updateUI(ctx, state, output),
@@ -533,6 +679,7 @@ export async function runWorkflow(
 							if (fixHandoff.issueUpdates?.length !== 1) throw new Error(`Builder must report exactly one issueUpdate for ${entry.issue.id}`);
 							update = fixHandoff.issueUpdates?.[0];
 							if (!update || update.issueId !== entry.issue.id) throw new Error(`Builder reported ${update?.issueId || "no issue"} while retrying ${entry.issue.id}`);
+							await lintCheckIssueTurn();
 						}
 						entry.status = update.status === "fixed" ? "fixed" : "unresolved";
 						entry.lastAction = update.summary;
@@ -550,7 +697,7 @@ export async function runWorkflow(
 					const remaining = issueLedger.filter((entry) => entry.status !== "fixed" && entry.issue.owner !== "environment");
 					if (remaining.length > 0) throw new Error("Issue ledger still contains unresolved non-environment issues; cannot complete handoff");
 					const completionResult = await runSubagent({
-						cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: subagentModel,
+						cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: modelFor("builder"),
 						task: buildCompletionTask(issueLedger, state.iteration),
 						tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "build.jsonl"),
 						signal: controller.signal, tui: tui("builder", "pbt build"), onOutput: (output) => updateUI(ctx, state, output),
@@ -566,14 +713,53 @@ export async function runWorkflow(
 					updateUI(ctx, state, completionResult.output);
 				}
 			}
-			saveState(cwd, state, pi);
+			await runLintGate("build", state.iteration, async (diagnostics) => {
+				const lintFixResult = await runSubagent({
+					cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: modelFor("builder"),
+					task: buildLintRepairTask(diagnostics, state.iteration),
+					tools: ["edit", "write", "read", "bash", "grep", "find", "ls"], sessionPath: path.join(runDir, "build.jsonl"),
+					signal: controller.signal, tui: tui("builder", "pbt build"), onOutput: (output) => updateUI(ctx, state, output),
+					...progress("builder", `build-${state.iteration}-lint-repair`),
+				});
+				const lintFixHandoff = requireHandoff(lintFixResult, "build", state.iteration);
+				lintFixHandoff.iterationCycle = currentCycle;
+				state.handoffs.push(lintFixHandoff);
+				buildHandoff = {
+					...buildHandoff,
+					summary: `${buildHandoff.summary}\nLint repair: ${lintFixHandoff.summary}`,
+					artifacts: [...new Map([...buildHandoff.artifacts, ...lintFixHandoff.artifacts].map((artifact) => [artifact.path, artifact])).values()],
+					decisions: [...buildHandoff.decisions, ...lintFixHandoff.decisions],
+				};
+				saveState(cwd, state, pi);
+			});
 
 			if (!testAuthorHandoff) throw new Error(`Tester authoring handoff is missing before verification at iteration ${state.iteration}`);
+			if (testAuthorHandoff.iteration === state.iteration) await runLintGate("test-authoring", state.iteration, async (diagnostics) => {
+				const lintFixResult = await runSubagent({
+					cwd, agentPath: projectAgentPath(cwd, "tester.md"), model: modelFor("tester"),
+					task: buildTestAuthoringLintRepairTask(diagnostics),
+					tools: ["edit", "write", "read", "grep", "find", "ls", "bash"], sessionPath: path.join(runDir, "test.jsonl"),
+					signal: controller.signal, tui: tui("tester", "pbt test"), onOutput: (output) => updateUI(ctx, state, output),
+					...progress("tester", `test-authoring-${state.iteration}-lint-repair`),
+				});
+				const lintFixHandoff = requireHandoff(lintFixResult, "test", state.iteration);
+				lintFixHandoff.testStage = "authoring";
+				lintFixHandoff.iterationCycle = currentCycle;
+				validateAuthoringHandoff(lintFixHandoff);
+				state.handoffs.push(lintFixHandoff);
+				testAuthorHandoff = {
+					...lintFixHandoff,
+					testStrategy: lintFixHandoff.testStrategy || testAuthorHandoff!.testStrategy,
+					artifacts: [...new Map([...testAuthorHandoff!.artifacts, ...lintFixHandoff.artifacts].map((artifact) => [artifact.path, artifact])).values()],
+				};
+				saveState(cwd, state, pi);
+			});
+			saveState(cwd, state, pi);
 			state.phase = "test verification";
 			const testResult = await runSubagent({
 				cwd,
 				agentPath: projectAgentPath(cwd, "tester.md"),
-				model: subagentModel,
+				model: modelFor("tester"),
 				task: buildTestVerificationTask(
 					request,
 					planPath,
@@ -594,13 +780,25 @@ export async function runWorkflow(
 				onOutput: (output) => updateUI(ctx, state, output),
 				...progress("tester", `test-verification-${state.iteration}`),
 			});
-			const verificationHandoff = requireHandoff(testResult, "test", state.iteration);
-			verificationHandoff.testStage = "verification";
-			verificationHandoff.iterationCycle = currentCycle;
-			validateVerificationHandoff(verificationHandoff);
+			let verificationHandoff = await verificationHandoffFor(testResult, state.iteration);
+			await runLintGate("test-verification", state.iteration, async (diagnostics) => {
+				const lintFixResult = await runSubagent({
+					cwd,
+					agentPath: projectAgentPath(cwd, "tester.md"),
+					model: modelFor("tester"),
+					task: buildTestVerificationLintRepairTask(diagnostics, verificationHandoff),
+					tools: ["edit", "write", "read", "bash", "grep", "find", "ls"],
+					sessionPath: path.join(runDir, "test.jsonl"),
+					signal: controller.signal,
+					tui: tui("tester-verification", "pbt test"),
+					onOutput: (output) => updateUI(ctx, state, output),
+					...progress("tester", `test-verification-${state.iteration}-lint-repair`),
+				});
+				verificationHandoff = await verificationHandoffFor(lintFixResult, state.iteration);
+			});
 			state.handoffs.push(verificationHandoff);
 			saveState(cwd, state, pi);
-			updateUI(ctx, state, testResult.output);
+			updateUI(ctx, state, verificationHandoff.summary || testResult.output);
 			testStatus = verificationHandoff.status || "fail";
 			testIssues = verificationHandoff.issues || [];
 			lastVerificationHandoff = verificationHandoff;
@@ -622,6 +820,10 @@ export async function runWorkflow(
 
 		if (testStatus !== "pass" && state.stopReason !== "plateau" && state.stopReason !== "max-iterations") {
 			state.stopReason = "max-iterations";
+		}
+		if (testStatus === "pass" && state.documentationRequested) {
+			state.status = "running";
+			await runDocumentationPhase(pi, ctx, state, models, controller.signal, efforts);
 		}
 		state.status =
 			testStatus === "pass"

@@ -96,24 +96,34 @@ export function assertPlanExists(cwd: string, planPath: string): void {
 
 export function summarizeState(state: WorkflowState): string {
 	const latest = state.handoffs.at(-1);
+	const justBuild = state.workflowName === "b" || state.workflowId === "b";
 	return [
-		`${state.runId} · ${state.status} · ${state.interactive ? "interactive" : "simple"}`,
+		`${state.runId} · ${state.status} · ${justBuild ? "just-build" : state.interactive ? "interactive" : "simple"}`,
 		`request: ${state.request}`,
-		`plan: ${state.planPath}`,
-		`iteration: ${state.iteration}/${state.maxIterations} (budget cycle ${state.iterationCycle || 0})`,
+		justBuild ? "plan: not used (single Builder phase)" : `plan: ${state.planPath}`,
+		justBuild
+			? `build turns: 1; lint-repair limit: ${state.maxLintRepairs || 0} (budget cycle ${state.iterationCycle || 0})`
+			: `iteration: ${state.iteration}/${state.maxIterations} (budget cycle ${state.iterationCycle || 0})`,
 		`stop: ${state.stopReason || "none"}`,
+		`lint: ${state.lintCommand || "not configured"} (${(state.lintRuns || []).filter((run) => run.exitCode === 0).length} pass / ${(state.lintRuns || []).filter((run) => run.exitCode !== 0).length} fail)`,
 		`issue ledger: ${state.issueLedger?.length ? state.issueLedger.map((entry) => `${entry.issue.id}=${entry.status}`).join(", ") : "none"}`,
 		`phase: ${state.phase || "unknown"}`,
 		`agents: ${Object.entries(state.agentStatuses || {})
 			.map(([agent, status]) => `${agent}=${status.status} (${status.phase})`)
 			.join(", ") || "none"}`,
+		`models: ${Object.entries(state.agentModels || {})
+			.map(([role, model]) => `${role}=${model}`)
+			.join(", ") || "unresolved"}`,
+		`efforts: ${Object.entries(state.agentEfforts || {})
+			.map(([role, effort]) => `${role}=${effort}`)
+			.join(", ") || "high (default)"}`,
 		latest ? `latest: ${latest.phase}${latest.testStage ? `/${latest.testStage}` : ""} — ${latest.summary}` : "latest: none",
 	].join("\n");
 }
 
 export function inspectState(state: WorkflowState, cwd: string, limit = 40): string {
 	const events = readProgress(cwd, state, limit);
-	return `${summarizeState(state)}\nactive: ${state.currentAgent || "none"}\nactivity: ${state.currentActivity || "none"}\nactivity log: ${state.activityLogPath || "none"}\nevents: ${state.eventCount || 0}\n\n${events.length ? events.map(formatProgressEvent).join("\n") : "(no activity recorded)"}`;
+	return `${summarizeState(state)}${state.failureReason ? `\nfailure: ${state.failureReason}` : ""}\nactive: ${state.currentAgent || "none"}\nactivity: ${state.currentActivity || "none"}\nactivity log: ${state.activityLogPath || "none"}\nevents: ${state.eventCount || 0}\n\n${events.length ? events.map(formatProgressEvent).join("\n") : "(no activity recorded)"}`;
 }
 
 export function stateForArgument(cwd: string, runId: string | undefined): WorkflowState | null {

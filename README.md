@@ -44,8 +44,12 @@ pi -e /path/to/eregion
 - `extensions/eregion/index.ts` — one package entrypoint that loads the
   one-for-all workflow, clarification, OpenRouter dynamic models, guardrails,
   plan-only mode, custom header, and session default model behavior
-- `agents/` — planner, builder, tester, and designer prompts used by PBT/DPBT
-- `workflows/` — PBT and DPBT workflow definitions
+- `agents/` — planner, builder, tester, designer, and Docs-agent prompts used by
+  PBT/DPBT and the focused just-build workflow
+- `workflows/` — PBT, DPBT, and just-build workflow definitions; each subagent role
+  (planner/designer/builder/tester/documentation) can be pinned to its own LLM
+  provider/model via `models` and given its own Pi reasoning level via `efforts`
+  (defaults to `high`; see `extensions/eregion/one-for-all/docs.md`)
 - `skills/` — PBT plus the shared UI/UX, security, wallet, and related skills
 - `third_party/superpowers/` — vendored Superpowers v7.0.0 skills and its Pi startup/bootstrap extension; upstream source and license are recorded in `UPSTREAM.md`
 - `themes/` — LOTR and retro gaming themes
@@ -55,6 +59,78 @@ The package resolves its bundled agents and workflow definitions from its own
 installed location, so it works even when the consuming project has no `.pi/`
 configuration. A project can still override agents/workflows by creating
 `.pi/agents/` or `.pi/workflows/` files.
+
+Before running PBT, DPBT, or just-build in a project, configure its quality command once:
+
+```text
+/pbt-lint-setup
+```
+
+The command starts a visible, interruptible lint-setup turn in the current Pi
+session. The agent inspects the repository, chooses or reuses the appropriate
+project-local linter, creates its configuration and package/task script, and
+writes the command to `.pi/lint.json`. You can interrupt it or provide more
+context using Pi's normal controls. Build and test phases run that command as
+a required gate, routing failures back to the persistent phase agent before
+proceeding. Run `/pbt-lint-setup --force` to re-evaluate an existing setup.
+
+For small, direct changes use `/b <request>`. Just-build skips planning and
+separate test authoring/verification: one persistent Builder implements the
+request, then the orchestrator runs the configured lint command. Every lint
+failure is returned to that same Builder session for a focused repair before
+lint is rerun. Use `/b-status`, `/b-inspect`, `/b-resume`, `/b-stop`, and
+`/b-cleanup` for the corresponding run controls. `/flow b <request>` and
+`pbt_start` with `workflow: "b"` are equivalent entry points. See
+`extensions/eregion/one-for-all/docs.md` for details.
+
+### Documentation maintenance
+
+Add `--docs` to a workflow to run a final, isolated Docs-agent phase **only after its required test and lint gates pass**:
+
+```text
+/pbt --docs <request>
+/dpbt --interactive --docs <request>
+/b --docs <request>
+```
+
+The Docs agent is a separate `documentation` workflow phase and subagent. It
+only changes `docs/`, creates or maintains `docs/README.md` as the entry point,
+and keeps concise, linked feature, technical, and decision documents as
+applicable. It records important product, business, and technical choices and
+integrations without turning the folder into a code encyclopedia; it also
+removes obsolete or redundant files in `docs/`.
+
+Run `/doc` at any time (no workflow required) for the same project-wide
+maintenance pass **in the Pi session where you invoked it**. It starts a normal,
+visible and interruptible agent turn there rather than a background subagent.
+`--doc` remains accepted as a backwards-compatible alias for `--docs`.
+
+## Guardrails whitelist
+
+During PBT and DPBT, guardrail permission selectors appear in the **parent
+session**, labeled with the workflow, requesting phase, and subagent. This works
+for design, planning, building, test authoring/verification, and repair turns,
+with both headless children and Herdr tabs. Parallel requests are queued; there
+is no need to switch to a child session. All existing permission choices remain
+available. Session-only approvals and **Reject and stop execution** apply to the
+requesting subagent, not the parent. A missing parent UI or disconnected relay
+blocks access rather than granting permission or opening a hidden child prompt.
+
+Use `/guardrails-allow project <path>` or `/guardrails-allow global <path>` inside Pi
+to allow a file or directory without future prompts. Paths may be absolute or
+relative to the current working directory; spaces in paths are supported. The
+permission popup also offers **Allow and add path to project whitelist** and
+**Allow and add path to global whitelist**. These choices permit the current
+operation and persist the approved path. A whitelisted directory covers its
+contents, including sensitive files and scripts executed from `/tmp`.
+
+Project entries are stored as absolute paths in `<project>/.pi/guardrails.json`;
+global entries go in `<agent-dir>/guardrails.json` (normally
+`~/.pi/agent/guardrails.json`, or `PI_CODING_AGENT_DIR`). Both files have the
+form `{ "whitelist": ["/absolute/path"] }`. Edit them to remove permissions;
+changes are picked up on the next tool call without reloading Pi. Keep project
+whitelists out of version control if the paths or permissions are local to your
+machine. Invalid configuration blocks guarded tool calls until fixed.
 
 ## Avoiding collisions
 
