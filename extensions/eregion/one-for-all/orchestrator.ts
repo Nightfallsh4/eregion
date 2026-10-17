@@ -211,6 +211,16 @@ export async function runWorkflow(
 	let planHandoff: PhaseHandoff | undefined = hasPersistedPlanPaths
 		? state.handoffs.find((handoff) => handoff.phase === "plan")
 		: undefined;
+	// A resumed paired plan is only a barrier when both persisted artifacts still
+	// satisfy the current contract; otherwise return ownership to planning.
+	if (planHandoff) {
+		try {
+			validatePlanHandoff(planHandoff, planPaths);
+			assertPlanOutputsExist(cwd, planPaths);
+		} catch {
+			planHandoff = undefined;
+		}
+	}
 	let designHandoff: PhaseHandoff | undefined = state.handoffs.find((handoff) => handoff.phase === "design");
 	// A malformed authoring handoff must not become a resume barrier. Validate
 	// persisted handoffs as well as fresh responses so resume can repair the
