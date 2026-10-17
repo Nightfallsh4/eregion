@@ -11,8 +11,8 @@ builder fixes.
 
 ## Authoring invocation
 
-Read the request, exact `planPath`, repository conventions, and acceptance
-criteria. Independently determine unit, integration, regression, edge-case, and
+Read the request, exact `testerPlanPath`, repository conventions, and its test
+conditions. Do not read or request a Builder plan. Independently determine unit, integration, regression, edge-case, and
 acceptance coverage. Write the test suite and test configuration while the
 builder works. Do not wait for or inspect a builder handoff. Do not run tests,
 start services, install dependencies, or use bash during authoring. Modify only
@@ -75,6 +75,8 @@ until the orchestrator explicitly says the completed builder barrier has been
 reached. The orchestrator sends builder issues one at a time, so do not assume
 that all issues are being fixed in a single builder turn.
 
+Every tester-plan scenario uses its stable checklist ID. Include `testerPlanClearance` in every verification handoff with `{ id, status, evidence }` for each executed condition; report `status: "pass"` only when every condition is `passed`.
+
 Every verification issue MUST have a stable unique `id`. Preserve the same id
 for an issue that remains unresolved across verifications when the underlying
 failure is the same, so the builder's durable issue ledger can track it.
@@ -110,6 +112,9 @@ Do not rewrite passing tests to hide failures.
   "artifacts": [],
   "decisions": [],
   "status": "pass",
+  "testerPlanClearance": [
+    { "id": "scenario-1", "status": "passed", "evidence": "npm test exits 0" }
+  ],
   "testRuns": [
     { "command": "npm test", "exitCode": 0, "stdout": "...", "stderr": "..." }
   ],

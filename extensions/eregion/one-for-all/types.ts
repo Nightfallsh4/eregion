@@ -43,6 +43,12 @@ export interface TestIssue {
 	owner?: "builder" | "tester" | "environment";
 }
 
+export interface TesterPlanCondition {
+	id: string;
+	status: "passed" | "failed" | "blocked";
+	evidence: string;
+}
+
 export interface TestRun {
 	command: string;
 	exitCode: number;
@@ -104,6 +110,7 @@ export interface PhaseHandoff {
 	testRuns?: TestRun[];
 	issueUpdates?: IssueResolution[];
 	testStrategy?: string;
+	testerPlanClearance?: TesterPlanCondition[];
 	status?: "pass" | "fail";
 	issues?: TestIssue[];
 	completedAt: number;

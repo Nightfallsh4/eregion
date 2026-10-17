@@ -123,10 +123,10 @@ export function buildJustBuildLintRepairTask(diagnostics: string, attempt: numbe
 }
 
 /** Initial implementation: includes the plan delta and no issue-only rules. */
-export function buildInitialBuildTask(request: string, planPath: string, planHandoff: PhaseHandoff, iteration: number): string {
+export function buildInitialBuildTask(request: string, builderPlanPath: string, planHandoff: PhaseHandoff, iteration: number): string {
 	return [
 		`Implement the plan for this request: ${request}`,
-		`Read the exact plan at ${planPath}. Build iteration ${iteration}.`,
+		`Read only the Builder plan at ${builderPlanPath}. Build iteration ${iteration}.`,
 		`Plan context: ${renderPlanContext(planHandoff)}`,
 		"This is the initial implementation. Do not modify tests, run tests, or consume tester output.",
 		"Track every production artifact and key implementation decision.",
@@ -197,14 +197,14 @@ export function buildTestAuthoringLintRepairTask(diagnostics: string): string {
 
 export function buildTestAuthoringTask(
 	request: string,
-	planPath: string,
+	testerPlanPath: string,
 	planHandoff: PhaseHandoff,
 	iteration: number,
 	late = false,
 ): string {
 	return [
 		`${late ? "Author" : "Independently author"} tests for this request: ${request}`,
-		`Read the exact plan at ${planPath}. Test authoring iteration ${iteration}. Plan context: ${renderPlanContext(planHandoff)}`,
+		`Read only the Tester plan at ${testerPlanPath}. Test authoring iteration ${iteration}. Plan context: ${renderPlanContext(planHandoff)}`,
 		late
 			? "The builder has completed implementation. Inspect current implementation files as needed, but do not run tests until the verification turn."
 			: "The builder is working in parallel. Do not inspect, wait for, or consume a builder handoff.",
@@ -229,7 +229,7 @@ export function buildTestVerificationLintRepairTask(diagnostics: string, previou
 
 export function buildTestVerificationTask(
 	request: string,
-	planPath: string,
+	testerPlanPath: string,
 	buildHandoff: PhaseHandoff,
 	authorHandoff: PhaseHandoff,
 	iteration: number,
@@ -240,7 +240,7 @@ export function buildTestVerificationTask(
 	return (firstVerification
 		? [
 			`Verify the implementation for this request: ${request}`,
-			`Read the exact plan at ${planPath}. Verification iteration ${iteration}.`,
+			`Read only the Tester plan at ${testerPlanPath}. Verification iteration ${iteration}.`,
 			`Test authoring context: ${renderAuthoringContext(authorHandoff)}`,
 			`Builder context: ${renderBuilderBarrier(buildHandoff)}`,
 		]
@@ -251,7 +251,7 @@ export function buildTestVerificationTask(
 		.concat([
 			"The builder-complete barrier permits command execution now. Run authored and relevant existing suites.",
 			"Capture exact commands, exit codes, stdout, and stderr. Do not weaken or rewrite tests to hide failures.",
-			"Output testStage=verification with status, testRuns, metrics, and actionable issues. Give each issue a stable ID and preserve that ID when the same failure remains.",
+			"Output testStage=verification with status, testRuns, metrics, testerPlanClearance, and actionable issues. Record each Tester-plan scenario ID with evidence; status=pass requires every clearance entry to be passed. Give each issue a stable ID and preserve that ID when the same failure remains.",
 		])
 		.join("\n\n");
 }

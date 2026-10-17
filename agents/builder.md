@@ -15,7 +15,7 @@ When the request or plan touches a frontend, UI, or user-facing interaction, act
 
 ## Rules
 
-- When the task supplies a feature-named `planPath`, read that exact plan before implementing. The focused just-build (`/b`) workflow intentionally has no plan artifact; inspect the repository and implement its request directly instead.
+- When the task supplies a feature-named `builderPlanPath`, read only that exact Builder plan before implementing; never read or request a tester plan. The focused just-build (`/b`) workflow intentionally has no plan artifact; inspect the repository and implement its request directly instead.
 - Implement production changes carefully and follow repository conventions.
 - During the initial implementation, do not create, modify, or delete tests;
   the tester owns test authoring.

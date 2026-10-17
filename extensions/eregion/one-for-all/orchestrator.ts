@@ -573,13 +573,13 @@ export async function runWorkflow(
 
 			if (isInitialBuild) {
 					const designContext = state.design?.approvedAt ? `\n\nApproved design reference: ${state.design.decisionPath}\nReference the isolated preview at ${state.design.previewDir}; implement its approved behavior and decisions in the app, not its review panel.` : "";
-				const buildTask = buildInitialBuildTask(request, planPath, planHandoff, state.iteration) + designContext;
+				const buildTask = buildInitialBuildTask(request, planPaths.builderPlanPath, planHandoff, state.iteration) + designContext;
 				let buildResult: AgentResult | undefined;
 				if (existingBuildHandoff) {
 					buildResult = { exitCode: 0, output: JSON.stringify(existingBuildHandoff), stderr: "", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 } };
 				}
 				if (!existingBuildHandoff && !existingAuthorHandoff) {
-					const authorTask = buildTestAuthoringTask(request, planPath, planHandoff, state.iteration, false) + (state.design?.approvedAt ? `\n\nApproved design reference: ${state.design.decisionPath}\nTest the approved user-facing behavior; the preview itself is not application code.` : "");
+					const authorTask = buildTestAuthoringTask(request, planPaths.testerPlanPath, planHandoff, state.iteration, false) + (state.design?.approvedAt ? `\n\nApproved design reference: ${state.design.decisionPath}\nTest the approved user-facing behavior; the preview itself is not application code.` : "");
 					const parallelResults = await Promise.allSettled([
 						runSubagent({
 							cwd, agentPath: projectAgentPath(cwd, "builder.md"), model: modelFor("builder"),
@@ -611,7 +611,7 @@ export async function runWorkflow(
 				buildHandoff = existingBuildHandoff || requireHandoff(buildResult, "build", state.iteration);
 				if (!existingBuildHandoff) state.handoffs.push(buildHandoff);
 				if (!testAuthorHandoff || testAuthorHandoff.iteration !== state.iteration) {
-					const authored = await authorTests(buildTestAuthoringTask(request, planPath, planHandoff, state.iteration, true) + (state.design?.approvedAt ? `\n\nApproved design reference: ${state.design.decisionPath}` : ""), `test-authoring-${state.iteration}`);
+					const authored = await authorTests(buildTestAuthoringTask(request, planPaths.testerPlanPath, planHandoff, state.iteration, true) + (state.design?.approvedAt ? `\n\nApproved design reference: ${state.design.decisionPath}` : ""), `test-authoring-${state.iteration}`);
 					testAuthorHandoff = authored.handoff;
 					state.handoffs.push(authored.handoff);
 					saveState(cwd, state, pi);
@@ -793,7 +793,7 @@ export async function runWorkflow(
 				model: modelFor("tester"),
 				task: buildTestVerificationTask(
 					request,
-					planPath,
+					planPaths.testerPlanPath,
 					buildHandoff,
 					testAuthorHandoff,
 					state.iteration,

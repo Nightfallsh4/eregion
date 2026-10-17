@@ -20,6 +20,7 @@ import type {
 	PhaseHandoff,
 	PlanPaths,
 	TestIssue,
+	TesterPlanCondition,
 	TestRun,
 	WorkflowState,
 } from "./types.js";
@@ -126,6 +127,9 @@ export function normalizeHandoff(value: unknown, phase: PhaseHandoff["phase"], i
 	const issueUpdates = Array.isArray(value.issueUpdates)
 		? value.issueUpdates.map(normalizeIssueResolution).filter((entry): entry is IssueResolution => entry !== null)
 		: undefined;
+	const testerPlanClearance = Array.isArray(value.testerPlanClearance)
+		? value.testerPlanClearance.filter((entry): entry is TesterPlanCondition => isRecord(entry) && typeof entry.id === "string" && typeof entry.evidence === "string" && (entry.status === "passed" || entry.status === "failed" || entry.status === "blocked"))
+		: undefined;
 
 	return {
 		phase,
@@ -145,6 +149,7 @@ export function normalizeHandoff(value: unknown, phase: PhaseHandoff["phase"], i
 		testRuns,
 		issueUpdates,
 		testStrategy: typeof value.testStrategy === "string" ? value.testStrategy : undefined,
+		testerPlanClearance,
 		status: value.status === "pass" || value.status === "fail" ? value.status : undefined,
 		issues,
 		completedAt: Date.now(),
@@ -453,6 +458,9 @@ export function validateVerificationHandoff(handoff: PhaseHandoff): void {
 	}
 	if (!handoff.testRuns || handoff.testRuns.length === 0) {
 		throw new Error("Tester verification handoff must include captured testRuns");
+	}
+	if (handoff.status === "pass" && (!handoff.testerPlanClearance?.length || handoff.testerPlanClearance.some((condition) => condition.status !== "passed"))) {
+		throw new Error("Passing tester verification must include all-passed tester plan clearance");
 	}
 	const ids = (handoff.issues || []).map((issue) => issue.id);
 	if (new Set(ids).size !== ids.length) {
