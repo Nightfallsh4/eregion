@@ -9,7 +9,8 @@
   "type": "module",
   "pi": {
     "extensions": [
-      "./extensions/eregion/index.ts"
+      "./extensions/eregion/index.ts",
+      "./third_party/superpowers/.pi/extensions/superpowers.ts"
     ],
     "skills": [],
     "themes": [

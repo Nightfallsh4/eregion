@@ -47,6 +47,7 @@ pi -e /path/to/eregion
 - `agents/` — planner, builder, tester, and designer prompts used by PBT/DPBT
 - `workflows/` — PBT and DPBT workflow definitions
 - `skills/` — PBT plus the shared UI/UX, security, wallet, and related skills
+- `third_party/superpowers/` — vendored Superpowers v7.0.0 skills and its Pi startup/bootstrap extension; upstream source and license are recorded in `UPSTREAM.md`
 - `themes/` — LOTR and retro gaming themes
 - `config/models.json` — optional custom model registry snapshot
 
