@@ -14,6 +14,12 @@ export interface ArtifactEntry {
 	action: "created" | "modified" | "deleted";
 }
 
+/** The two role-specific plan artifacts reserved for one PBT/DPBT run. */
+export interface PlanPaths {
+	builderPlanPath: string;
+	testerPlanPath: string;
+}
+
 export interface DecisionEntry {
 	decision: string;
 	rationale: string;
@@ -88,7 +94,10 @@ export interface PhaseHandoff {
 	artifacts: ArtifactEntry[];
 	decisions: DecisionEntry[];
 	metrics?: Record<string, number>;
+	/** Legacy single-plan field retained while old persisted handoffs remain readable. */
 	planPath?: string;
+	builderPlanPath?: string;
+	testerPlanPath?: string;
 	assumptions?: string[];
 	testStage?: "authoring" | "verification" | "repair";
 	buildStage?: "issue-fix" | "completed";
@@ -148,7 +157,10 @@ export interface WorkflowState {
 	workflowId?: string;
 	request: string;
 	runId: string;
+	/** Legacy single-plan path retained so older persisted runs can be migrated. */
 	planPath: string;
+	builderPlanPath?: string;
+	testerPlanPath?: string;
 	interactive: boolean;
 	answers: WorkflowAnswer[];
 	questionRounds: number;

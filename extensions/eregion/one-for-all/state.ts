@@ -10,7 +10,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { LEGACY_RUNS_DIR, RUNS_DIR } from "./constants.js";
 import { formatProgressEvent, readProgress } from "./progress.js";
-import type { RunControl, WorkflowState } from "./types.js";
+import type { PlanPaths, RunControl, WorkflowState } from "./types.js";
 import { ensureDirectory, isRecord } from "./util.js";
 
 export const activeRuns = new Map<string, RunControl>();
@@ -91,6 +91,36 @@ export function assertPlanExists(cwd: string, planPath: string): void {
 	}
 	if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile() || fs.statSync(absolute).size === 0) {
 		throw new Error(`Planner did not write a non-empty plan to ${planPath}`);
+	}
+}
+
+/** Verify both reserved role plans are distinct, safe, regular, and populated. */
+export function assertPlanOutputsExist(cwd: string, paths: PlanPaths): void {
+	if (paths.builderPlanPath === paths.testerPlanPath) {
+		throw new Error("Builder and tester plan paths must be distinct");
+	}
+	const root = path.resolve(cwd);
+	const plansDirectory = path.join(root, "acache", "plans");
+	for (const [role, planPath] of [["Builder", paths.builderPlanPath], ["Tester", paths.testerPlanPath]] as const) {
+		const absolute = path.resolve(root, planPath);
+		const projectRelative = path.relative(root, absolute);
+		const plansRelative = path.relative(plansDirectory, absolute);
+		if (
+			projectRelative.startsWith("..")
+			|| path.isAbsolute(projectRelative)
+			|| plansRelative.startsWith("..")
+			|| path.isAbsolute(plansRelative)
+		) {
+			throw new Error(`${role} plan must be inside acache/plans: ${planPath}`);
+		}
+		let stat: fs.Stats;
+		try {
+			stat = fs.lstatSync(absolute);
+		} catch {
+			throw new Error(`${role} plan is missing: ${planPath}`);
+		}
+		if (!stat.isFile()) throw new Error(`${role} plan must be a regular file: ${planPath}`);
+		if (stat.size === 0) throw new Error(`${role} plan must be non-empty: ${planPath}`);
 	}
 }
 

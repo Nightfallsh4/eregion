@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { MAX_SLUG_LENGTH } from "./constants.js";
 import { ensureDirectory } from "./util.js";
+import type { PlanPaths } from "./types.js";
 
 // An in-memory reservation closes the race between two commands started in the
 // same pi process. The zero-byte placeholder on disk also reserves the path
@@ -142,6 +143,61 @@ export function reservePlanPath(cwd: string, request: string): string {
 	}
 }
 
+/**
+ * Reserve the Builder and Tester plans as a single collision-safe unit. A
+ * suffix is usable only if both members are free, preventing mismatched pairs
+ * such as builder-plan-feature.md and tester-plan-feature-2.md.
+ */
+export function reservePlanPaths(cwd: string, request: string): PlanPaths {
+	const slug = deriveFeatureSlug(request);
+	const root = path.resolve(cwd);
+	const plansDir = path.join(root, "acache", "plans");
+	let suffix = 1;
+	while (true) {
+		const suffixPart = suffix === 1 ? "" : `-${suffix}`;
+		const builderAbsolute = path.join(plansDir, `builder-plan-${slug}${suffixPart}.md`);
+		const testerAbsolute = path.join(plansDir, `tester-plan-${slug}${suffixPart}.md`);
+		if (
+			fs.existsSync(builderAbsolute)
+			|| fs.existsSync(testerAbsolute)
+			|| reservedPlanPaths.has(builderAbsolute)
+			|| reservedPlanPaths.has(testerAbsolute)
+		) {
+			suffix++;
+			continue;
+		}
+
+		ensureDirectory(plansDir);
+		let builderReserved = false;
+		try {
+			fs.writeFileSync(builderAbsolute, "", { flag: "wx" });
+			reservedPlanPaths.add(builderAbsolute);
+			builderReserved = true;
+			fs.writeFileSync(testerAbsolute, "", { flag: "wx" });
+			reservedPlanPaths.add(testerAbsolute);
+			return {
+				builderPlanPath: path.relative(root, builderAbsolute),
+				testerPlanPath: path.relative(root, testerAbsolute),
+			};
+		} catch {
+			if (builderReserved) {
+				reservedPlanPaths.delete(builderAbsolute);
+				try {
+					fs.unlinkSync(builderAbsolute);
+				} catch {
+					// A competing process may have replaced it; retry a new suffix.
+				}
+			}
+			suffix++;
+		}
+	}
+}
+
 export function releasePlanReservation(cwd: string, planPath: string): void {
 	reservedPlanPaths.delete(path.resolve(cwd, planPath));
+}
+
+export function releasePlanReservations(cwd: string, paths: PlanPaths): void {
+	releasePlanReservation(cwd, paths.builderPlanPath);
+	releasePlanReservation(cwd, paths.testerPlanPath);
 }
