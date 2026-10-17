@@ -26,9 +26,10 @@ import {
 	readLatestAssistantText,
 	requireHandoff,
 	validateAuthoringHandoff,
+	validatePlanHandoff,
 	validateVerificationHandoff,
 } from "./handoffs.js";
-import { releasePlanReservation, reservePlanPath } from "./plan-paths.js";
+import { releasePlanReservations, reservePlanPaths } from "./plan-paths.js";
 import { appendProgress } from "./progress.js";
 import {
 	buildCompletionTask,
@@ -37,6 +38,7 @@ import {
 	buildIssueFixRetryTask,
 	buildIssueFixTask,
 	buildDesignTask,
+	buildPlanRecoveryTask,
 	buildPlanTask,
 	buildTestAuthoringTask,
 	buildTestAuthoringLintRepairTask,
@@ -46,7 +48,7 @@ import {
 import { finishReport } from "./report.js";
 import { isHerdrTuiEnabled } from "./herdr.js";
 import { resolveSubagentEfforts, resolveSubagentModels, runSubagent, type SubagentEfforts, type SubagentModels, type SubagentRole } from "./subagent.js";
-import { activeRuns, assertPlanExists, createRunId, saveState } from "./state.js";
+import { activeRuns, assertPlanOutputsExist, createRunId, saveState } from "./state.js";
 import type { AgentResult, IssueLedgerEntry, LintRun, PhaseHandoff, ProgressEvent, RunControl, TestIssue, WorkflowState } from "./types.js";
 import { ensureDirectory } from "./util.js";
 import { askClarifications, updateUI } from "./ui.js";
@@ -78,11 +80,21 @@ export async function runWorkflow(
 		? path.dirname(path.resolve(resumeState.activityLogPath))
 		: path.join(cwd, RUNS_DIR, runId);
 	ensureDirectory(runDir);
-	const planPath = resumeState?.planPath || reservePlanPath(cwd, request);
+	const hasPersistedPlanPaths = Boolean(resumeState?.builderPlanPath && resumeState?.testerPlanPath);
+	const planPaths = hasPersistedPlanPaths
+		? { builderPlanPath: resumeState!.builderPlanPath!, testerPlanPath: resumeState!.testerPlanPath! }
+		: reservePlanPaths(cwd, request);
+	// Keep the old variable as a Builder-facing compatibility alias until all
+	// downstream task builders receive their role-specific paths.
+	const planPath = planPaths.builderPlanPath;
 	const previewDir = path.join(runDir, "design-preview");
-	if (resumeState && !fs.existsSync(path.resolve(cwd, planPath))) {
-		ensureDirectory(path.dirname(path.resolve(cwd, planPath)));
-		fs.writeFileSync(path.resolve(cwd, planPath), "", { flag: "a" });
+	if (resumeState) {
+		for (const outputPath of [planPaths.builderPlanPath, planPaths.testerPlanPath]) {
+			if (!fs.existsSync(path.resolve(cwd, outputPath))) {
+				ensureDirectory(path.dirname(path.resolve(cwd, outputPath)));
+				fs.writeFileSync(path.resolve(cwd, outputPath), "", { flag: "a" });
+			}
+		}
 	}
 	const state: WorkflowState = resumeState || {
 		workflowName: useDesignReview ? "dpbt" : WORKFLOW_NAME,
@@ -90,6 +102,8 @@ export async function runWorkflow(
 		request,
 		runId,
 		planPath,
+		builderPlanPath: planPaths.builderPlanPath,
+		testerPlanPath: planPaths.testerPlanPath,
 		interactive,
 		answers: [],
 		questionRounds: 0,
@@ -110,6 +124,9 @@ export async function runWorkflow(
 	// raised by the caller when desired. Never reduce it during a resume.
 	state.workflowName = state.workflowName || (useDesignReview ? "dpbt" : WORKFLOW_NAME);
 	state.workflowId = state.workflowId || workflowId;
+	state.builderPlanPath = planPaths.builderPlanPath;
+	state.testerPlanPath = planPaths.testerPlanPath;
+	state.planPath = planPaths.builderPlanPath;
 	state.maxIterations = Math.max(state.maxIterations || 1, Math.max(1, Math.min(20, Math.floor(maxIterations) || MAX_ITERATIONS)));
 	state.iterationCycle = state.iterationCycle || 0;
 	state.documentationRequested = Boolean(state.documentationRequested || documentationRequested);
@@ -191,7 +208,9 @@ export async function runWorkflow(
 	state.agentModels = subagentModels;
 	state.agentEfforts = subagentEfforts;
 	saveState(cwd, state, pi);
-	let planHandoff: PhaseHandoff | undefined = state.handoffs.find((handoff) => handoff.phase === "plan");
+	let planHandoff: PhaseHandoff | undefined = hasPersistedPlanPaths
+		? state.handoffs.find((handoff) => handoff.phase === "plan")
+		: undefined;
 	let designHandoff: PhaseHandoff | undefined = state.handoffs.find((handoff) => handoff.phase === "design");
 	// A malformed authoring handoff must not become a resume barrier. Validate
 	// persisted handoffs as well as fresh responses so resume can repair the
@@ -475,6 +494,7 @@ export async function runWorkflow(
 		// persisted plan handoff is sufficient and the planner is not rerun.
 		if (!planHandoff) {
 		const plannerPath = projectAgentPath(cwd, planInteractive ? "planner-interactive.md" : "planner-simple.md");
+		let plannerTask = buildPlanTask(request, planPaths, planInteractive ? state.answers : [], planInteractive);
 		while (true) {
 			if (controller.signal.aborted) throw new Error("Workflow aborted");
 			state.phase = "plan";
@@ -484,9 +504,9 @@ export async function runWorkflow(
 				cwd,
 				agentPath: plannerPath,
 				model: modelFor("planner"),
-				task: `${buildPlanTask(request, planPath, planInteractive ? state.answers : [], planInteractive)}${state.design?.approvedAt ? `\n\nApproved design reference (must be honored): ${state.design.decisionPath}\nIsolated review preview: ${state.design.previewDir}` : ""}`,  
+				task: `${plannerTask}${state.design?.approvedAt ? `\n\nApproved design reference (must be honored): ${state.design.decisionPath}\nIsolated review preview: ${state.design.previewDir}` : ""}`,
 				tools: ["read", "grep", "find", "ls", "bash", "write"],
-				sessionPath: planInteractive || herdrTui ? path.join(runDir, "planner.jsonl") : undefined,
+				sessionPath: path.join(runDir, "planner.jsonl"),
 				signal: controller.signal,
 				tui: tui("planner", "pbt plan"),
 				onOutput: (output) => updateUI(ctx, state, output),
@@ -501,16 +521,27 @@ export async function runWorkflow(
 				updateUI(ctx, state);
 				const answers = await askClarifications(ctx, clarification.questions, state.questionRounds);
 				state.answers.push(...answers);
+				plannerTask = buildPlanTask(request, planPaths, state.answers, planInteractive);
 				state.status = "running";
 				saveState(cwd, state, pi);
 				continue;
 			}
-			planHandoff = requireHandoff(plannerResult, "plan", 1, planPath);
-			assertPlanExists(cwd, planPath);
-			if (!planHandoff.artifacts.some((artifact) => artifact.path === planPath)) {
-				planHandoff.artifacts.unshift({ path: planPath, description: "Feature-named implementation plan", action: "created" });
+			planHandoff = requireHandoff(plannerResult, "plan", 1);
+			try {
+				validatePlanHandoff(planHandoff, planPaths);
+				assertPlanOutputsExist(cwd, planPaths);
+			} catch (validationError) {
+				const reason = validationError instanceof Error ? validationError.message : String(validationError);
+				state.phase = "plan recovery";
+				state.latestOutput = `Planner output requires correction: ${reason}`;
+				saveState(cwd, state, pi);
+				updateUI(ctx, state, state.latestOutput);
+				plannerTask = buildPlanRecoveryTask(planPaths, reason);
+				continue;
 			}
-			planHandoff.planPath = planPath;
+			planHandoff.planPath = planPaths.builderPlanPath;
+			planHandoff.builderPlanPath = planPaths.builderPlanPath;
+			planHandoff.testerPlanPath = planPaths.testerPlanPath;
 			planHandoff.iteration = 1;
 			planHandoff.iterationCycle = state.iterationCycle || 0;
 			state.handoffs.push(planHandoff);
@@ -848,15 +879,17 @@ export async function runWorkflow(
 	} finally {
 		if (externalSignal) externalSignal.removeEventListener("abort", relayAbort);
 		activeRuns.delete(runId);
-		// Keep a completed plan, but make a failed empty reservation available
-		// again so a later run does not permanently consume a feature name.
-		try {
-			if (fs.existsSync(path.resolve(cwd, planPath)) && fs.statSync(path.resolve(cwd, planPath)).size === 0) {
-				fs.unlinkSync(path.resolve(cwd, planPath));
+		// Keep completed plans, but make failed empty reservations available again
+		// so a later run does not permanently consume a feature-name pair.
+		for (const outputPath of [planPaths.builderPlanPath, planPaths.testerPlanPath]) {
+			try {
+				if (fs.existsSync(path.resolve(cwd, outputPath)) && fs.statSync(path.resolve(cwd, outputPath)).size === 0) {
+					fs.unlinkSync(path.resolve(cwd, outputPath));
+				}
+			} catch {
+				// Best-effort cleanup only.
 			}
-		} catch {
-			// Best-effort cleanup only.
 		}
-		releasePlanReservation(cwd, planPath);
+		releasePlanReservations(cwd, planPaths);
 	}
 }

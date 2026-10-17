@@ -18,6 +18,7 @@ import type {
 	IssueResolution,
 	IssueLedgerEntry,
 	PhaseHandoff,
+	PlanPaths,
 	TestIssue,
 	TestRun,
 	WorkflowState,
@@ -134,6 +135,8 @@ export function normalizeHandoff(value: unknown, phase: PhaseHandoff["phase"], i
 		decisions,
 		metrics,
 		planPath: typeof value.planPath === "string" ? value.planPath : undefined,
+		builderPlanPath: typeof value.builderPlanPath === "string" ? value.builderPlanPath : undefined,
+		testerPlanPath: typeof value.testerPlanPath === "string" ? value.testerPlanPath : undefined,
 		assumptions: Array.isArray(value.assumptions)
 			? value.assumptions.filter((item): item is string => typeof item === "string")
 			: undefined,
@@ -419,6 +422,20 @@ export async function verifyWithSessionFallback(
 		if (parsed) return parsed;
 	}
 	return requireHandoff(result, phase, iteration, planPath);
+}
+
+export function validatePlanHandoff(handoff: PhaseHandoff, paths: PlanPaths): void {
+	if (handoff.phase !== "plan") throw new Error("Plan handoff must declare phase=plan");
+	if (!handoff.builderPlanPath) throw new Error("Plan handoff must include builderPlanPath");
+	if (!handoff.testerPlanPath) throw new Error("Plan handoff must include testerPlanPath");
+	if (handoff.builderPlanPath !== paths.builderPlanPath || handoff.testerPlanPath !== paths.testerPlanPath) {
+		throw new Error("Plan handoff must report the exact reserved builder and tester paths");
+	}
+	for (const planPath of [paths.builderPlanPath, paths.testerPlanPath]) {
+		if (!handoff.artifacts.some((artifact) => artifact.path === planPath && artifact.action === "created")) {
+			throw new Error(`Plan handoff must list created artifact ${planPath}`);
+		}
+	}
 }
 
 export function validateAuthoringHandoff(handoff: PhaseHandoff): void {

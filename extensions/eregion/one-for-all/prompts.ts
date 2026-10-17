@@ -6,7 +6,7 @@
  */
 
 import { renderAuthoringContext, renderBuilderBarrier, renderIssue, renderPlanContext } from "./handoffs.js";
-import type { IssueLedgerEntry, PhaseHandoff, TestIssue, WorkflowAnswer } from "./types.js";
+import type { IssueLedgerEntry, PhaseHandoff, PlanPaths, TestIssue, WorkflowAnswer } from "./types.js";
 
 const handoffRule = "End with one fenced JSON handoff matching the required phase schema.";
 
@@ -59,7 +59,7 @@ export function buildDocumentationTask(request: string, handoffs: PhaseHandoff[]
 	].join("\n\n");
 }
 
-export function buildPlanTask(request: string, planPath: string, answers: WorkflowAnswer[], interactive: boolean): string {
+export function buildPlanTask(request: string, paths: PlanPaths, answers: WorkflowAnswer[], interactive: boolean): string {
 	if (interactive && answers.length > 0) {
 		const latestRound = Math.max(...answers.map((answer) => answer.round));
 		const latestAnswers = answers
@@ -67,9 +67,9 @@ export function buildPlanTask(request: string, planPath: string, answers: Workfl
 			.map((answer) => `${answer.questionId}: ${answer.answer}${answer.unresolved ? " [unresolved assumption]" : ""}`)
 			.join("\n");
 		return [
-			"Continue planning in the existing persistent planner session; prior request, repository findings, plan path, and clarification context are retained.",
+			"Continue planning in the existing persistent planner session; prior request, repository findings, paired plan paths, and clarification context are retained.",
 			`New answers from clarification round ${latestRound}:\n${latestAnswers}`,
-			"Apply these answers. If a material ambiguity remains, output only a clarification_request JSON object; otherwise write the plan and output the final plan handoff.",
+			"Apply these answers. If a material ambiguity remains, output only a clarification_request JSON object; otherwise write both plans and output the final plan handoff.",
 		].join("\n\n");
 	}
 	const answerText = answers.length
@@ -77,12 +77,22 @@ export function buildPlanTask(request: string, planPath: string, answers: Workfl
 		: "(none)";
 	return [
 		`Plan this request: ${request}`,
-		`Write only the exact reserved plan path: ${planPath}. Variant: ${interactive ? "interactive" : "simple"}.`,
+		`Create only these exact reserved plan files: Builder implementation instructions at ${paths.builderPlanPath}; Tester test cases and scenarios at ${paths.testerPlanPath}. Variant: ${interactive ? "interactive" : "simple"}.`,
 		"Explore the repository first. Do not modify production code or tests.",
+		"The builder plan must contain ordered implementation guidance, constraints, and acceptance criteria. The tester plan must contain stable scenario IDs, test cases, commands, coverage expectations, and pass conditions.",
 		`Prior clarification answers:\n${answerText}`,
 		interactive
-			? "If a material ambiguity remains, output only the clarification_request JSON protocol; otherwise write the plan and output the final handoff."
-			: "Do not ask questions. Infer repository-answerable details and record unresolved choices as assumptions, then write the plan and output the final handoff.",
+			? "If a material ambiguity remains, output only the clarification_request JSON protocol; otherwise write both plans and output the final handoff with builderPlanPath and testerPlanPath."
+			: "Do not ask questions. Infer repository-answerable details and record unresolved choices as assumptions, then write both plans and output the final handoff with builderPlanPath and testerPlanPath.",
+	].join("\n\n");
+}
+
+export function buildPlanRecoveryTask(paths: PlanPaths, validationError: string): string {
+	return [
+		"RECOVERY: The previous plan handoff or artifacts failed the orchestrator's required validation.",
+		`Validation failure: ${validationError}`,
+		`Create or correct only the exact Builder plan ${paths.builderPlanPath} and Tester plan ${paths.testerPlanPath}.`,
+		"Do not modify production code or tests. Return a complete replacement plan handoff with both exact path fields and both created artifacts.",
 	].join("\n\n");
 }
 
