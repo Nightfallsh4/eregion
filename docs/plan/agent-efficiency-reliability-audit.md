@@ -335,7 +335,7 @@ More consistent decisions across runs, fewer repeated investigations, and lower 
 - Reject unparseable handoffs for control transitions; request a focused schema-repair turn instead.
 - Validate artifact paths against each phase allowlist.
 - Require phase evidence:
-  - Planner: reserved non-empty plan and affected file/test list.
+  - Planner: reserved non-empty plans and affected file/test list.
   - Builder: validated diff and changed-file manifest.
   - Tester: orchestrator-captured command results.
   - Reviewer: acceptance-criteria traceability.
