@@ -10,7 +10,8 @@
   "pi": {
     "extensions": [
       "./extensions/eregion/index.ts",
-      "./third_party/superpowers/.pi/extensions/superpowers.ts"
+      "./third_party/superpowers/.pi/extensions/superpowers.ts",
+      "./extensions/eregion/pi-web-search.ts"
     ],
     "skills": [],
     "prompts": [
@@ -24,5 +25,11 @@
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*",
     "typebox": "*"
-  }
+  },
+  "dependencies": {
+    "pi-web-search": "1.7.0"
+  },
+  "bundleDependencies": [
+    "pi-web-search"
+  ]
 }

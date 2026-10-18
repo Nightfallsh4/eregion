@@ -104,6 +104,20 @@ export const DEFAULT_SUBAGENT_EFFORT: SubagentEffort = "high";
 
 const SUBAGENT_EFFORTS = new Set<SubagentEffort>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
+/** Extension tools every workflow subagent may use alongside its phase-specific tools. */
+const SHARED_SUBAGENT_TOOLS = ["web_search", "url_context"] as const;
+
+/**
+ * Add package-provided tools to Pi's explicit subagent allowlist.
+ *
+ * Passing `--tools` replaces Pi's default selection, so an extension tool is
+ * unavailable unless it is named here. `url_context` is automatically hidden
+ * by pi-web-search for models that do not support provider-native URL context.
+ */
+export function resolveSubagentTools(tools: readonly string[]): string[] {
+  return [...new Set([...tools, ...SHARED_SUBAGENT_TOOLS])];
+}
+
 /** Convert a workflow/environment value to a valid Pi thinking level. */
 export function parseSubagentEffort(value: unknown): SubagentEffort | undefined {
 	if (typeof value !== "string") return undefined;
@@ -318,7 +332,7 @@ async function runSubagentHeadless(
     "--append-system-prompt",
     options.agentPath,
     "--tools",
-    options.tools.join(","),
+    resolveSubagentTools(options.tools).join(","),
     `Task: ${options.task}`,
   );
 
@@ -508,7 +522,7 @@ async function runSubagentTui(options: SubagentOptions): Promise<AgentResult> {
         "--append-system-prompt",
         options.agentPath,
         "--tools",
-        options.tools.join(","),
+        resolveSubagentTools(options.tools).join(","),
       ];
       await startHerdrAgentWhenShellIsReady({
         name: agentInstanceName,
