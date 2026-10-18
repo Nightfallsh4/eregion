@@ -6,6 +6,12 @@ This is a brainstorming-only session about ${@:-an application or product idea}.
 
 Before replying, invoke and follow the bundled Superpowers `brainstorming` skill. Its conversation, playback, option-exploration, written-design, and approval rules are mandatory for this session.
 
+## Clarification interface
+
+- When the `clarify` extension is available, invoke its `clarify` tool by default for every question that needs the user's answer, including the opening and follow-up brainstorming questions. Ask one question per tool call so the discussion remains sequential.
+- Give each tool question 3–4 concrete, relevant options; its built-in custom-answer option preserves open-ended responses. Do not ask through the tool when the answer is already available from the user or repository context.
+- Use a plain-text question only when `clarify` is unavailable, cannot present an interactive UI, or the user explicitly asks to continue in ordinary chat. Never manufacture an answer after a cancelled clarification.
+
 ## Session contract
 
 - Treat every message in this session as exploration until the user explicitly asks to **finalise** the discussion and write its document.

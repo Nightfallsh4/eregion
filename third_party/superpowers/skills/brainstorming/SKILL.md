@@ -23,27 +23,46 @@ why?
   blue"). This is a quick, clear task. Do it, and say what you did.
 - **Something non-trivial is missing.** Start the conversation.
 
+## Asking with `clarify`
+
+When the `clarify` extension is available, use its `clarify` tool by default
+for every question you need the human partner to answer: the first question,
+follow-ups, and questions during playback. Do not replace it with a prose
+question merely because writing one is faster.
+
+Send one question per tool call so the conversation stays sequential. Keep the
+prompt open and grounded in a real moment or concrete picture; give 3–4
+specific, useful options that help them answer quickly, knowing that the tool
+also provides a custom-answer path. Do not use `clarify` for facts you can
+already infer from the request or available context.
+
+Use an ordinary prose question only when `clarify` is unavailable, cannot show
+an interactive UI, or the human partner explicitly asks to continue in plain
+chat. If they cancel a `clarify` prompt, do not silently invent an answer.
+
 ## Your First Message
 
-Your first message is two things, in this order:
+Your first response is two things, in this order:
 
 1. One line letting them know that if they'd rather skip the questions and
    have you just start, they can say so. If they take you up on it, this
    skill is done: state any significant how-it-gets-made choice
    (platform, language, medium) in one plain line, then do what they
    asked through the normal workflow.
-2. One open question that gets them describing. Ask about a real moment
-   or a concrete picture: "What's the moment you find yourself wishing
-   this existed?" or "Tell me about the people who'll be in the room."
+2. When `clarify` is available, one `clarify` tool call with an open question
+   that gets them describing. Otherwise, ask that question in prose. Ask about
+   a real moment or a concrete picture: "What's the moment you find yourself
+   wishing this existed?" or "Tell me about the people who'll be in the room."
 
-That's the whole message.
+That's the whole response.
 
 ## The Conversation
 
-Each message ends with one question: a single sentence with no list of
-example answers hanging off it. Use plain language, pitched just a little
-above where your human partner is. Match their vocabulary; never use
-process jargon.
+Ask one question at a time. When `clarify` is available, ask it through the
+`clarify` tool rather than prose; otherwise, each message ends with one
+question: a single sentence with no list of example answers hanging off it.
+Use plain language, pitched just a little above where your human partner is.
+Match their vocabulary; never use process jargon.
 
 Be clear and concise. Lead with what matters. Avoid jargon. When you
 report what you found, give them the most important findings and offer
