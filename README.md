@@ -75,6 +75,25 @@ project context, or your own
 `APPEND_SYSTEM.md` guidance. Reload Pi with `/reload` (or start a new session)
 after updating the package.
 
+### Start a project
+
+Run `/project-setup [description]` from an empty project directory to create a
+framework-agnostic starting point. For example:
+
+```text
+/project-setup Create a local-first desktop music library manager.
+```
+
+With no description, `/project-setup` reads eligible root-level project briefs,
+prioritising `AGENTS.md` and `CLAUDE.md`, then uses the brainstorming skill and
+`clarify` tool to resolve only material language, framework, library, runtime,
+and delivery choices. It does not impose a preferred stack. The visible,
+interruptible setup turn initialises Git when needed, scaffolds the selected
+framework with project-local dependencies, adds applicable formatter, lint,
+type-check, test, build, and framework configuration, and writes the required
+`.pi/quality.json` profile for PBT, DPBT, and just-build. It runs the required
+quality checks and reports genuine failures rather than bypassing them.
+
 Before running PBT, DPBT, or just-build in a project, configure its quality profile once:
 
 ```text

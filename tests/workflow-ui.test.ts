@@ -355,6 +355,30 @@ test("/pbt-lint-setup starts a visible, current-session quality-profile setup tu
 	assert.match(userMessages[0], /\.pi[\\/]quality\.json/);
 });
 
+test("/project-setup starts a visible framework-agnostic setup turn and rejects flags", async (t) => {
+	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "eregion-project-setup-command-"));
+	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+	const { ctx, notices } = makeContext(cwd);
+	const { pi, commands, userMessages } = makeAPI();
+	oneForAllExtension(pi);
+
+	await commands.get("project-setup")!.handler("", ctx);
+	assert.equal(userMessages.length, 1);
+	assert.match(userMessages[0], /current session/i);
+	assert.match(userMessages[0], /initiali[sz]e Git/i);
+	assert.match(userMessages[0], /\.pi[\\/]quality\.json/);
+	assert.doesNotMatch(userMessages[0], /React|Vite|Express|Python/i);
+
+	await commands.get("project-setup")!.handler("Create a desktop timer.", ctx);
+	assert.equal(userMessages.length, 2);
+	assert.match(userMessages[1], /Create a desktop timer\./);
+
+	await commands.get("project-setup")!.handler("--force", ctx);
+	assert.equal(userMessages.length, 2);
+	assert.equal(notices.at(-1)!.type, "warning");
+	assert.match(notices.at(-1)!.text, /Usage: \/project-setup \[description\]/);
+});
+
 test("/doc starts a visible maintenance turn in its invoking session", async () => {
 	const { ctx } = makeContext();
 	const { pi, commands, messages, userMessages } = makeAPI();

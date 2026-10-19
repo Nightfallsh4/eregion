@@ -41,6 +41,7 @@ import type { WorkflowState } from "./types.js";
 import { updateUI } from "./ui.js";
 import { formatWorkflowCatalog, loadWorkflowDefinitions, resolveWorkflow, type WorkflowDefinition } from "./workflows.js";
 import { buildQualitySetupTask, QUALITY_CONFIG_PATH } from "./quality.js";
+import { buildProjectSetupTask, findProjectSetupContext } from "./project-setup.js";
 import { buildDocumentationTask } from "./prompts.js";
 
 const WorkflowStartParams = Type.Object({
@@ -420,6 +421,18 @@ export default function oneForAllExtension(pi: ExtensionAPI) {
 			// that invoked /doc. Do not dispatch this manual command through the
 			// child-process subagent runner; --docs owns that separate final phase.
 			pi.sendUserMessage(buildDocumentationTask("Project-wide documentation maintenance", [], true));
+		},
+	});
+
+	pi.registerCommand("project-setup", {
+		description: "Set up the current directory with a project stack, Git, and required workflow quality profile",
+		handler: async (args, ctx) => {
+			const description = args.trim();
+			if (description.startsWith("--")) {
+				ctx.ui.notify("Usage: /project-setup [description]", "warning");
+				return;
+			}
+			pi.sendUserMessage(buildProjectSetupTask(description, findProjectSetupContext(ctx.cwd)));
 		},
 	});
 

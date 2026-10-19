@@ -385,6 +385,26 @@ Plus the reserved `acache/plans/plan-<slug>.md`, written by the planner subagent
 
 ## Configuration
 
+### Project setup
+
+Run `/project-setup [description]` in an empty directory to start a visible,
+interruptible, framework-agnostic project setup turn. For example:
+
+```text
+/project-setup Build an internal equipment booking service.
+```
+
+When the description is omitted, the command collects bounded root-level
+project briefs, prioritising `AGENTS.md` and `CLAUDE.md`. The in-session agent
+uses the brainstorming skill and `clarify` tool to resolve only material
+language, framework, library, runtime, and delivery decisions; it does not
+apply a fixed stack. It initialises Git if necessary, scaffolds the selected
+framework, installs project-local framework and quality dependencies, and adds
+applicable format, lint, type-check, test, build, and framework configuration.
+Every successful setup writes `.pi/quality.json` with the required quality
+commands used by PBT, DPBT, and just-build, runs those commands once, and
+reports genuine failures without weakening the gates.
+
 ### Required project quality profile
 
 Before running `/pbt`, `/dpbt`, `/b`, or a workflow tool, configure the
