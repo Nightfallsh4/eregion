@@ -1,0 +1,19 @@
+{
+  "name": "pbr-simple",
+  "workflow": "pbr",
+  "variant": "simple",
+  "runner": "pbr",
+  "description": "Feature-named plan, Builder-owned TDD, and a persistent read-only review/fix loop.",
+  "interactive": false,
+  "models": {
+    "default": "openai/gpt-5.6-terra",
+    "planner": "openai/gpt-6.1-sol",
+    "builder": "openai/gpt-5.6-terra",
+    "reviewer": "openai/gpt-5.6-terra"
+  },
+  "efforts": { "default": "high" },
+  "plan": { "agent": "planner-simple", "tools": ["read", "grep", "find", "ls", "bash", "write"], "session": "ephemeral" },
+  "build": { "agent": "builder", "tools": ["edit", "write", "read", "bash", "grep", "find", "ls"], "session": "persistent" },
+  "review": { "agent": "reviewer", "tools": ["read", "bash", "grep", "find", "ls"], "session": "persistent", "planOnly": true },
+  "loop": { "maxIterations": 5, "plateauDetection": true }
+}

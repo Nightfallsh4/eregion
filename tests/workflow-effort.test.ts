@@ -15,6 +15,19 @@ test("bundled workflows configure high effort for every subagent by default", (t
 	}
 });
 
+test("bundled PBR and DPBR presets configure a Reviewer role", (t) => {
+	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "eregion-review-workflow-effort-"));
+	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+	const definitions = loadWorkflowDefinitions(cwd);
+	for (const id of ["pbr-simple", "pbr-interactive", "dpbr", "dpbr-interactive"]) {
+		const definition = definitions.find((candidate) => candidate.id === id);
+		assert.ok(definition, `${id} is bundled`);
+		assert.ok(definition.runner === "pbr" || definition.runner === "dpbr", `${id} uses a review runner`);
+		assert.ok(definition.models?.reviewer, `${id} configures a Reviewer model`);
+		assert.equal(resolveSubagentEfforts(definition.efforts).reviewer, "high", `${id} resolves Reviewer effort`);
+	}
+});
+
 test("workflow effort configuration supports role and phase overrides", (t) => {
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "eregion-workflow-effort-"));
 	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
@@ -36,6 +49,7 @@ test("workflow effort configuration supports role and phase overrides", (t) => {
 		planner: "xhigh",
 		builder: "max",
 		tester: "low",
+		reviewer: "low",
 		documentation: "low",
 	});
 });

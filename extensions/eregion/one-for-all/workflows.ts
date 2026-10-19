@@ -18,7 +18,7 @@ export interface WorkflowDefinition {
 	workflowName: string;
 	variant?: string;
 	description: string;
-	runner: "pbt" | "dpbt" | "build";
+	runner: "pbt" | "dpbt" | "pbr" | "dpbr" | "build";
 	interactive: boolean;
 	maxIterations: number;
 	configPath?: string;
@@ -72,6 +72,46 @@ const FALLBACKS: WorkflowDefinition[] = [
 		efforts: DEFAULT_EFFORTS,
 	},
 	{
+		id: "pbr-simple",
+		workflowName: "pbr",
+		variant: "simple",
+		description: "Plan, build with TDD, then review with an automatic fix loop.",
+		runner: "pbr",
+		interactive: false,
+		maxIterations: 5,
+		efforts: DEFAULT_EFFORTS,
+	},
+	{
+		id: "pbr-interactive",
+		workflowName: "pbr",
+		variant: "interactive",
+		description: "The plan/build/review workflow with planner clarification rounds.",
+		runner: "pbr",
+		interactive: true,
+		maxIterations: 5,
+		efforts: DEFAULT_EFFORTS,
+	},
+	{
+		id: "dpbr",
+		workflowName: "dpbr",
+		variant: "design-review",
+		description: "Design an isolated reviewable mockup, get explicit approval, then plan, build, and review.",
+		runner: "dpbr",
+		interactive: false,
+		maxIterations: 5,
+		efforts: DEFAULT_EFFORTS,
+	},
+	{
+		id: "dpbr-interactive",
+		workflowName: "dpbr",
+		variant: "interactive",
+		description: "Ask focused product/design questions during design, then review, plan, build, and review.",
+		runner: "dpbr",
+		interactive: true,
+		maxIterations: 5,
+		efforts: DEFAULT_EFFORTS,
+	},
+	{
 		id: "b",
 		workflowName: "b",
 		variant: "just-build",
@@ -88,6 +128,7 @@ const PHASE_ROLE_KEYS: Record<string, SubagentRole> = {
 	design: "designer",
 	build: "builder",
 	test: "tester",
+	review: "reviewer",
 	documentation: "documentation",
 };
 
@@ -102,7 +143,7 @@ function parseSubagentModels(value: unknown): SubagentModels | undefined {
 	if (!isRecord(value)) return undefined;
 	const result: SubagentModels = {};
 	const modelConfig = isRecord(value.models) ? value.models : value;
-	for (const key of ["default", "planner", "designer", "builder", "tester", "documentation"] as const) {
+	for (const key of ["default", "planner", "designer", "builder", "tester", "reviewer", "documentation"] as const) {
 		const raw = asString(modelConfig[key]);
 		if (raw?.trim()) result[key] = raw.trim();
 	}
@@ -124,7 +165,7 @@ function parseSubagentEfforts(value: unknown): SubagentEfforts | undefined {
 	if (!isRecord(value)) return undefined;
 	const result: SubagentEfforts = {};
 	const effortConfig = isRecord(value.efforts) ? value.efforts : value;
-	for (const key of ["default", "planner", "designer", "builder", "tester", "documentation"] as const) {
+	for (const key of ["default", "planner", "designer", "builder", "tester", "reviewer", "documentation"] as const) {
 		const effort = parseSubagentEffort(effortConfig[key]);
 		if (effort) result[key] = effort;
 	}
@@ -140,15 +181,19 @@ function definitionFromJson(value: unknown, configPath: string): WorkflowDefinit
 	if (!isRecord(value)) return null;
 	const id = asString(value.name)?.trim();
 	if (!id || !/^[a-z0-9][a-z0-9-]*$/.test(id)) return null;
-	const workflowName = (asString(value.workflow) || (id.startsWith("pbt") ? "pbt" : id)).trim();
+	const workflowName = (asString(value.workflow) || (id.startsWith("dpbr") ? "dpbr" : id.startsWith("pbr") ? "pbr" : id.startsWith("pbt") ? "pbt" : id)).trim();
 	const runner = (asString(value.runner) || (workflowName === "pbt" || id.startsWith("pbt")
 		? "pbt"
 		: workflowName === "dpbt" || id.startsWith("dpbt")
 			? "dpbt"
-			: workflowName === "b" || id === "b" || id === "just-build"
-				? "build"
-				: "")) as WorkflowDefinition["runner"] | "";
-	if (runner !== "pbt" && runner !== "dpbt" && runner !== "build") return null;
+			: workflowName === "pbr" || id.startsWith("pbr")
+				? "pbr"
+				: workflowName === "dpbr" || id.startsWith("dpbr")
+					? "dpbr"
+					: workflowName === "b" || id === "b" || id === "just-build"
+						? "build"
+						: "")) as WorkflowDefinition["runner"] | "";
+	if (runner !== "pbt" && runner !== "dpbt" && runner !== "pbr" && runner !== "dpbr" && runner !== "build") return null;
 	const loop = isRecord(value.loop) ? value.loop : undefined;
 	const configuredIterations = loop ? asNumber(loop.maxIterations, 5) : undefined;
 	const models = parseSubagentModels(value);
@@ -226,6 +271,12 @@ export function resolveWorkflow(cwd: string, requested?: string, interactive?: b
 	}
 	if (name === "dpbt") return definitions.find((definition) => definition.workflowName === "dpbt" && definition.interactive === Boolean(interactive))
 		|| definitions.find((definition) => definition.workflowName === "dpbt" && !definition.interactive)
+		|| null;
+	if (name === "pbr") return definitions.find((definition) => definition.workflowName === "pbr" && definition.interactive === Boolean(interactive))
+		|| definitions.find((definition) => definition.workflowName === "pbr" && !definition.interactive)
+		|| null;
+	if (name === "dpbr") return definitions.find((definition) => definition.workflowName === "dpbr" && definition.interactive === Boolean(interactive))
+		|| definitions.find((definition) => definition.workflowName === "dpbr" && !definition.interactive)
 		|| null;
 	if (name === "b" || name === "just-build") return definitions.find((definition) => definition.runner === "build") || null;
 	return definitions.find((definition) => definition.id === name || definition.workflowName === name && definition.interactive === Boolean(interactive)) || null;

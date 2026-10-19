@@ -62,10 +62,14 @@ export interface SubagentOptions {
   permissionWorkflow?: string;
   /** When present, run the phase in a visible detached Herdr tab. */
   tui?: TuiSubagentContext;
+  /** Start the child Pi session with its read-only plan-only mode enabled. */
+  planOnly?: boolean;
+  /** Permit only a final Reviewer git stage/commit under plan-only mode. */
+  reviewerCommitException?: boolean;
 }
 
 /** Subagent roles that can be pinned to a specific LLM provider/model. */
-export type SubagentRole = "designer" | "planner" | "builder" | "tester" | "documentation";
+export type SubagentRole = "designer" | "planner" | "builder" | "tester" | "reviewer" | "documentation";
 
 /**
  * Per-subagent model configuration resolved from a workflow definition's
@@ -79,6 +83,7 @@ export interface SubagentModels {
 	planner?: string;
 	builder?: string;
 	tester?: string;
+	reviewer?: string;
 	documentation?: string;
 }
 
@@ -96,10 +101,11 @@ export interface SubagentEfforts {
 	planner?: SubagentEffort;
 	builder?: SubagentEffort;
 	tester?: SubagentEffort;
+	reviewer?: SubagentEffort;
 	documentation?: SubagentEffort;
 }
 
-export const SUBAGENT_ROLES: readonly SubagentRole[] = ["designer", "planner", "builder", "tester", "documentation"];
+export const SUBAGENT_ROLES: readonly SubagentRole[] = ["designer", "planner", "builder", "tester", "reviewer", "documentation"];
 export const DEFAULT_SUBAGENT_EFFORT: SubagentEffort = "high";
 
 const SUBAGENT_EFFORTS = new Set<SubagentEffort>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
@@ -292,6 +298,26 @@ export function resolveSubagentEfforts(efforts: SubagentEfforts = {}): Record<Su
   return Object.fromEntries(SUBAGENT_ROLES.map((role) => [role, getSubagentEffort(efforts, role)])) as Record<SubagentRole, SubagentEffort>;
 }
 
+/** Build Pi CLI arguments shared by headless Reviewer and ordinary child sessions. */
+export function buildPiSubagentArgs(options: Pick<SubagentOptions, "agentPath" | "effort" | "model" | "planOnly" | "reviewerCommitException" | "sessionPath" | "task" | "tools">): string[] {
+  const args = ["--mode", "json", "-p"];
+  if (options.sessionPath) args.push("--session", options.sessionPath);
+  else args.push("--no-session");
+  if (options.model) args.push("--model", options.model);
+  args.push(
+    "--thinking",
+    options.effort || DEFAULT_SUBAGENT_EFFORT,
+    "--append-system-prompt",
+    options.agentPath,
+    "--tools",
+    resolveSubagentTools(options.tools).join(","),
+    `Task: ${options.task}`,
+  );
+  if (options.planOnly) args.push("--plan-only");
+  if (options.reviewerCommitException) args.push("--reviewer-commit-exception");
+  return args;
+}
+
 /** Dispatch to the requested visible TUI runner or the portable headless runner. */
 export async function runSubagent(
   options: SubagentOptions,
@@ -316,25 +342,12 @@ async function runSubagentHeadless(
   options: SubagentOptions,
   relay?: GuardrailRelayEndpoint,
 ): Promise<AgentResult> {
-  const args = ["--mode", "json", "-p"];
-  if (options.sessionPath) args.push("--session", options.sessionPath);
-  else args.push("--no-session");
   if (!options.model) {
     throw new Error(
       "No authenticated model is available for PBT subagents. Select an authenticated model in the parent session or set PBT_FLOW_MODEL=provider/model.",
     );
   }
-  args.push(
-    "--model",
-    options.model,
-    "--thinking",
-    options.effort || DEFAULT_SUBAGENT_EFFORT,
-    "--append-system-prompt",
-    options.agentPath,
-    "--tools",
-    resolveSubagentTools(options.tools).join(","),
-    `Task: ${options.task}`,
-  );
+  const args = buildPiSubagentArgs(options);
 
   const emitProgress = (
     event: Omit<ProgressEvent, "timestamp" | "agent" | "phase">,
@@ -355,7 +368,11 @@ async function runSubagentHeadless(
       cwd: options.cwd,
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, [GUARDRAIL_RELAY_ENV]: relay ? JSON.stringify(relay) : undefined },
+      env: {
+        ...process.env,
+        [GUARDRAIL_RELAY_ENV]: relay ? JSON.stringify(relay) : undefined,
+        EREGION_REVIEWER_COMMIT_EXCEPTION: options.reviewerCommitException ? "1" : undefined,
+      },
     });
     let buffer = "";
     let finished = false;
@@ -523,6 +540,8 @@ async function runSubagentTui(options: SubagentOptions): Promise<AgentResult> {
         options.agentPath,
         "--tools",
         resolveSubagentTools(options.tools).join(","),
+        ...(options.planOnly ? ["--plan-only"] : []),
+        ...(options.reviewerCommitException ? ["--reviewer-commit-exception"] : []),
       ];
       await startHerdrAgentWhenShellIsReady({
         name: agentInstanceName,
