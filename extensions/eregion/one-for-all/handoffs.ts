@@ -152,6 +152,11 @@ export function normalizeHandoff(value: unknown, phase: PhaseHandoff["phase"], i
 		testerPlanClearance,
 		status: value.status === "pass" || value.status === "fail" ? value.status : undefined,
 		issues,
+		reviewedAcceptanceCriteria: Array.isArray(value.reviewedAcceptanceCriteria)
+			? value.reviewedAcceptanceCriteria.filter((criterion): criterion is string => typeof criterion === "string" && criterion.trim().length > 0)
+			: undefined,
+		gitDiffSummary: typeof value.gitDiffSummary === "string" ? value.gitDiffSummary : undefined,
+		commitSha: typeof value.commitSha === "string" ? value.commitSha : undefined,
 		completedAt: Date.now(),
 	};
 }
@@ -478,6 +483,22 @@ export function validateVerificationHandoff(handoff: PhaseHandoff): void {
 	const ids = (handoff.issues || []).map((issue) => issue.id);
 	if (new Set(ids).size !== ids.length) {
 		throw new Error("Tester verification issues must have unique stable ids");
+	}
+}
+
+export function validateReviewHandoff(handoff: PhaseHandoff): void {
+	if (handoff.phase !== "review") throw new Error("Reviewer handoff must declare phase=review");
+	if (handoff.status !== "pass" && handoff.status !== "fail") throw new Error("Reviewer handoff must include status=pass or status=fail");
+	if (!handoff.reviewedAcceptanceCriteria?.length) throw new Error("Reviewer handoff must include acceptance-criteria evidence");
+	if (!handoff.gitDiffSummary?.trim()) throw new Error("Reviewer handoff must include Git diff evidence");
+	if (!handoff.testRuns?.length) throw new Error("Reviewer handoff must include required quality command evidence");
+	const ids = (handoff.issues || []).map((issue) => issue.id);
+	if (new Set(ids).size !== ids.length) throw new Error("Reviewer issues must have unique stable ids");
+	if (handoff.status === "pass") {
+		if (handoff.testRuns.some((run) => run.exitCode !== 0)) throw new Error("Passing Reviewer handoff must contain only successful quality runs");
+		if (!handoff.commitSha?.trim()) throw new Error("Passing Reviewer handoff must include the final commit SHA");
+	} else if (!handoff.issues?.length) {
+		throw new Error("Failed Reviewer handoff must include at least one actionable issue");
 	}
 }
 

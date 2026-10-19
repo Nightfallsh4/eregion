@@ -87,6 +87,27 @@ export function buildPlanTask(request: string, paths: PlanPaths, answers: Workfl
 	].join("\n\n");
 }
 
+export function buildReviewPlanTask(request: string, builderPlanPath: string, answers: WorkflowAnswer[], interactive: boolean): string {
+	const answerText = answers.length ? answers.map((answer) => `${answer.questionId}: ${answer.answer}`).join("\n") : "(none)";
+	return [
+		`Plan this PBR/DPBR request: ${request}`,
+		`Create only the exact Builder plan at ${builderPlanPath}; no Tester plan exists because the Builder owns TDD and tests.`,
+		"Explore the repository without changing implementation or tests. The plan MUST include a non-empty Markdown ## Acceptance Criteria section with specific verifiable criteria.",
+		"Include current findings, files, ordered implementation and TDD steps, test commands, constraints, assumptions, and risks.",
+		`Clarification answers: ${answerText}`,
+		interactive ? "If a material ambiguity remains, output only clarification_request; otherwise write the plan and complete handoff." : "Do not ask questions; record unresolved assumptions and write the plan.",
+	].join("\n\n");
+}
+
+export function buildReviewPlanRecoveryTask(builderPlanPath: string, validationError: string): string {
+	return [
+		"RECOVERY: The PBR/DPBR plan did not satisfy the mandatory acceptance-criteria gate.",
+		`Validation failure: ${validationError}`,
+		`Correct only ${builderPlanPath}; ensure its ## Acceptance Criteria section is non-empty and return a complete plan handoff with builderPlanPath and its created artifact.`,
+		"Do not modify production code or tests.",
+	].join("\n\n");
+}
+
 export function buildPlanRecoveryTask(paths: PlanPaths, validationError: string): string {
 	return [
 		"RECOVERY: The previous plan handoff or artifacts failed the orchestrator's required validation.",
@@ -204,6 +225,27 @@ export function buildTestAuthoringLintRepairTask(diagnostics: string): string {
 		`Quality command output (authoritative diagnostics):\n${diagnostics}`,
 		"Continue in this persistent tester session. Correct only quality findings in test files or test configuration that you authored/modified; do not change production code or weaken test behavior. Do not run quality commands or tests in this authoring repair turn; the orchestrator will rerun all required quality commands before verification.",
 		"Return a corrected authoring handoff with testStage=authoring, a testStrategy, and every authored/modified test artifact.",
+		handoffRule,
+	].join("\n\n");
+}
+
+export function buildReviewTask(
+	request: string,
+	builderPlanPath: string,
+	buildHandoff: PhaseHandoff,
+	iteration: number,
+	qualityCommands: Record<string, string>,
+	previousIssues: TestIssue[] = [],
+): string {
+	return [
+		`Review build iteration ${iteration} for this request: ${request}`,
+		`Read the Builder plan at ${builderPlanPath}; it is the authority for acceptance criteria.`,
+		`Builder handoff: ${renderBuilderBarrier(buildHandoff)}`,
+		`Run every required quality command and capture its command, exit code, stdout, and stderr: ${JSON.stringify(qualityCommands)}`,
+		"Inspect git diff --check, git diff, and git status. Verify every acceptance criterion, test changes, code quality, and repository structure.",
+		previousIssues.length ? `Prior review issues; preserve IDs for unresolved failures: ${renderIssues(previousIssues)}` : "This is the initial review.",
+		"Remain PLAN-ONLY: never modify a working-tree file. Return every defect to the Builder. Only after all checks pass may you stage reviewed paths and create the final commit under the reviewer commit exception.",
+		"Return phase=review with status, reviewedAcceptanceCriteria, gitDiffSummary, testRuns, actionable issues, and commitSha on pass.",
 		handoffRule,
 	].join("\n\n");
 }

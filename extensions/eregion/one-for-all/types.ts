@@ -64,7 +64,7 @@ export interface QualityProfile {
 export interface QualityRun extends TestRun {
 	/** Name of the command in `.pi/quality.json`, for example `lint` or `unit`. */
 	name: string;
-	stage: "build" | "test-authoring" | "test-verification";
+	stage: "build" | "test-authoring" | "test-verification" | "review" | "final-review";
 	iteration: number;
 	attempt: number;
 	completedAt: number;
@@ -104,7 +104,7 @@ export interface ClarificationRequest {
 }
 
 export interface PhaseHandoff {
-	phase: "design" | "plan" | "build" | "test" | "documentation";
+	phase: "design" | "plan" | "build" | "test" | "review" | "documentation";
 	iteration: number;
 	summary: string;
 	artifacts: ArtifactEntry[];
@@ -123,6 +123,12 @@ export interface PhaseHandoff {
 	testerPlanClearance?: TesterPlanCondition[];
 	status?: "pass" | "fail";
 	issues?: TestIssue[];
+	/** Review-only evidence that each Builder-plan criterion was assessed. */
+	reviewedAcceptanceCriteria?: string[];
+	/** Review-only concise result of the Reviewer-owned Git diff inspection. */
+	gitDiffSummary?: string;
+	/** Commit created by a passing Reviewer after all review checks pass. */
+	commitSha?: string;
 	completedAt: number;
 	/** Iteration budget cycle used to distinguish a reset/resumed run from older handoffs. */
 	iterationCycle?: number;
@@ -235,6 +241,8 @@ export interface WorkflowState {
 	qualityProfile?: QualityProfile;
 	/** Every required quality command run, including failed repair attempts. */
 	qualityRuns?: QualityRun[];
+	/** Commit SHA reported by a passing Reviewer and independently verified by the orchestrator. */
+	reviewCommitSha?: string;
 	/** @deprecated Legacy lint-only state retained for reading old persisted runs. */
 	lintCommand?: string;
 	/** @deprecated Legacy lint-only state retained for reading old persisted runs. */

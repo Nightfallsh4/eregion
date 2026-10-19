@@ -47,6 +47,11 @@ const DESTRUCTIVE_BASH_PATTERNS = [
 const PLAN_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls", "rg", "fd"];
 const FULL_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "rg", "fd"];
 
+/** The Reviewer may only stage a reviewed path and immediately create its final commit. */
+export function isReviewerCommitCommand(command: string, reviewerCommitException: boolean): boolean {
+	return reviewerCommitException && /^git add(?:\s+--)?\s+[^;&|]+ && git commit -m\s+(['"])[^'"]+\1\s*$/.test(command.trim());
+}
+
 export default function planOnlyExtension(pi: ExtensionAPI): void {
 	let planOnlyEnabled = false;
 	let persistedState = false;
@@ -54,6 +59,11 @@ export default function planOnlyExtension(pi: ExtensionAPI): void {
 	// --plan-only CLI flag for starting in plan mode
 	pi.registerFlag("plan-only", {
 		description: "Start in plan-only mode (read-only, no file modifications)",
+		type: "boolean",
+		default: false,
+	});
+	pi.registerFlag("reviewer-commit-exception", {
+		description: "Permit the Reviewer’s final stage-and-commit command while plan-only remains active",
 		type: "boolean",
 		default: false,
 	});
@@ -138,7 +148,8 @@ export default function planOnlyExtension(pi: ExtensionAPI): void {
 		// Block destructive bash commands
 		if (event.toolName === "bash") {
 			const command = event.input.command as string;
-			if (DESTRUCTIVE_BASH_PATTERNS.some((p) => p.test(command))) {
+			const reviewerCommitException = pi.getFlag("reviewer-commit-exception") === true || process.env.EREGION_REVIEWER_COMMIT_EXCEPTION === "1";
+			if (!isReviewerCommitCommand(command, reviewerCommitException) && DESTRUCTIVE_BASH_PATTERNS.some((p) => p.test(command))) {
 				return {
 					block: true,
 					reason:

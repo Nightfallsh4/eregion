@@ -8,7 +8,7 @@ import { runDirectory } from "./state.js";
 import { stopDesignPreviewServer } from "./design-review.js";
 import { guardrailRelayFile } from "../global/guardrails-relay.js";
 
-const SESSION_FILES = ["design.jsonl", "designer.jsonl", "planner.jsonl", "build.jsonl", "test.jsonl", "docs.jsonl"] as const;
+const SESSION_FILES = ["design.jsonl", "designer.jsonl", "planner.jsonl", "build.jsonl", "test.jsonl", "review.jsonl", "docs.jsonl"] as const;
 
 export interface CleanupResult {
 	runId: string;
@@ -50,7 +50,7 @@ async function closeHerdrTabsForRun(runId: string, warnings: string[]): Promise<
 	// that setting off after a run and still need to remove its old tabs.
 	if (process.env.HERDR_ENV !== "1" && !process.env.HERDR_WORKSPACE_ID) return 0;
 	const suffix = runId.split("-").at(-1) || runId;
-	const agentNames = new Set(["pbt", "dpbt", "b"].flatMap((prefix) => ["designer", "planner", "builder", "tester", "tester-verification", "documentation"].map((key) => `${prefix}-${key}-${suffix}`)));
+	const agentNames = new Set(["pbt", "dpbt", "pbr", "dpbr", "b"].flatMap((prefix) => ["designer", "planner", "builder", "tester", "tester-verification", "reviewer", "documentation"].map((key) => `${prefix}-${key}-${suffix}`)));
 	const tabIds = new Set<string>();
 	const workspaceId = process.env.HERDR_WORKSPACE_ID;
 
@@ -69,7 +69,7 @@ async function closeHerdrTabsForRun(runId: string, warnings: string[]): Promise<
 		const args = ["tab", "list"];
 		if (workspaceId) args.push("--workspace", workspaceId);
 		const response = await herdrCommand(args, { killAfterMs: 15_000 });
-		const labels = new Set(["pbt", "dpbt", "b"].flatMap((prefix) => ["design", "plan", "build", "test", "docs"].map((phase) => `${prefix} ${phase} ${suffix}`)));
+		const labels = new Set(["pbt", "dpbt", "pbr", "dpbr", "b"].flatMap((prefix) => ["design", "plan", "build", "test", "review", "docs"].map((phase) => `${prefix} ${phase} ${suffix}`)));
 		for (const tab of response?.result?.tabs || []) {
 			const label = typeof tab?.label === "string" ? tab.label.replace(/^[✓✗⟳]\s+/, "") : "";
 			if (labels.has(label) && typeof tab?.tab_id === "string") tabIds.add(tab.tab_id);
