@@ -11,6 +11,7 @@ import { updateUI } from "./ui.js";
 
 export function buildFinalReport(state: WorkflowState): string {
 	const justBuild = state.workflowName === "b" || state.workflowId === "b";
+	const reviewWorkflow = state.workflowName === "pbr" || state.workflowName === "dpbr";
 	const allArtifacts = new Map<string, ArtifactEntry>();
 	for (const handoff of state.handoffs) {
 		for (const artifact of handoff.artifacts) allArtifacts.set(artifact.path, artifact);
@@ -24,7 +25,9 @@ export function buildFinalReport(state: WorkflowState): string {
 		`- Variant: ${justBuild ? "just-build" : state.interactive ? "interactive" : "simple"}`,
 		...(justBuild
 			? ["- Plan: not used (single Builder phase)"]
-			: state.builderPlanPath && state.testerPlanPath
+			: reviewWorkflow
+				? [`- Builder plan: ${state.builderPlanPath || state.planPath}`, "- Verification: read-only Reviewer"]
+				: state.builderPlanPath && state.testerPlanPath
 				? [`- Builder plan: ${state.builderPlanPath}`, `- Tester plan: ${state.testerPlanPath}`]
 				: [`- Plan: ${state.planPath}`]),
 		...(state.documentationRequested ? [`- Documentation phase: ${state.handoffs.some((handoff) => handoff.phase === "documentation") ? "completed" : "requested but not completed"}`] : []),
@@ -33,7 +36,8 @@ export function buildFinalReport(state: WorkflowState): string {
 		`- Stop reason: ${state.stopReason || "none"}`,
 		`- Required quality commands: ${state.qualityProfile?.required.length ? state.qualityProfile.required.map((name) => `${name}=${state.qualityProfile!.commands[name]}`).join(", ") : "not configured"}`,
 		`- Issue ledger: ${state.issueLedger?.length ? state.issueLedger.map((entry) => `${entry.issue.id}=${entry.status} (${entry.attempts} attempt${entry.attempts === 1 ? "" : "s"})`).join(", ") : "none"}`,
-		"",
+		...(reviewWorkflow ? [`- Reviewer commit: ${state.reviewCommitSha || "not verified"}`] : []),
+		"", 
 		"## Handoffs",
 	];
 	for (const handoff of state.handoffs) {
@@ -44,7 +48,7 @@ export function buildFinalReport(state: WorkflowState): string {
 	}
 	lines.push("", "## Files", ...([...allArtifacts.values()].map((artifact) => `- ${artifact.action}: ${artifact.path} — ${artifact.description}`)));
 	const verificationRuns = state.handoffs.filter(isVerificationHandoff);
-	lines.push("", "## Test verification");
+	lines.push("", reviewWorkflow ? "## Review verification" : "## Test verification");
 	if (justBuild) lines.push("Not part of the just-build workflow.");
 	for (const handoff of verificationRuns) {
 		lines.push(`### Cycle ${handoff.iterationCycle || 0}, iteration ${handoff.iteration}: ${handoff.status || "unknown"}`);

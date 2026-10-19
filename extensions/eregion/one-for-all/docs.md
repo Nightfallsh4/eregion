@@ -12,7 +12,9 @@ extension convention.
 
 ## Big picture
 
-The extension exposes a workflow catalog. Use `/flows` to inspect available definitions and `/flow <workflow-id> <request>` to run one. PBT variants, the Design → Plan → Build → Test (DPBT) workflow, and the focused just-build (`b`) workflow are catalog entries in `.pi/workflows/`.
+The extension exposes a workflow catalog. Use `/flows` to inspect available definitions and `/flow <workflow-id> <request>` to run one. PBT variants, Design → Plan → Build → Test (DPBT), Plan → Build → Review (PBR), Design → Plan → Build → Review (DPBR), and focused just-build (`b`) are catalog entries in `.pi/workflows/`.
+
+PBR/DPBR use one Builder plan with a required non-empty `## Acceptance Criteria` section. The Builder owns TDD and test changes, never commits, and a plan-only Reviewer evaluates the diff, criteria, tests, code quality, and every required quality command. Failures return only to the Builder. On success, the Reviewer uses its narrowly scoped Git stage/commit exception to make the final commit; the orchestrator reruns the quality profile and verifies that commit before completing the workflow.
 
 ```
 /pbt <request>, /dpbt <request>, /b <request>, or pbt_start tool

@@ -332,6 +332,13 @@ test("headless reports retain stdout output and complete persisted diagnostics",
 	assert.equal(listStates(cwd)[0].failureReason, diagnostics);
 });
 
+test("registers direct PBR and DPBR commands", () => {
+	const { pi, commands } = makeAPI();
+	oneForAllExtension(pi);
+	assert.ok(commands.has("pbr"));
+	assert.ok(commands.has("dpbr"));
+});
+
 test("/pbt-lint-setup starts a visible, current-session quality-profile setup turn", async (t) => {
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "eregion-lint-setup-"));
 	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));

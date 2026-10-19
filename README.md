@@ -45,10 +45,10 @@ pi -e /path/to/eregion
   one-for-all workflow, clarification, OpenRouter dynamic models, guardrails,
   plan-only mode, custom header, session default model behavior, and the
   formal English-butler conversation manner
-- `agents/` — planner, builder, tester, designer, and Docs-agent prompts used by
-  PBT/DPBT and the focused just-build workflow
-- `workflows/` — PBT, DPBT, and just-build workflow definitions; each subagent role
-  (planner/designer/builder/tester/documentation) can be pinned to its own LLM
+- `agents/` — planner, builder, tester, reviewer, designer, and Docs-agent prompts used by
+  PBT/DPBT, PBR/DPBR, and the focused just-build workflow
+- `workflows/` — PBT, DPBT, PBR, DPBR, and just-build workflow definitions; each subagent role
+  (planner/designer/builder/tester/reviewer/documentation) can be pinned to its own LLM
   provider/model via `models` and given its own Pi reasoning level via `efforts`
   (defaults to `high`; see `extensions/eregion/one-for-all/docs.md`)
 - `skills/` — PBT plus the shared UI/UX, security, wallet, and related skills
@@ -93,6 +93,8 @@ failures to the persistent phase agent before proceeding. Run
 `/pbt-lint-setup --force` to re-evaluate an existing profile.
 
 PBT and DPBT reserve paired Builder and Tester plans under `acache/plans/`. The Planner must create both before the orchestrator starts Build/Test; invalid or missing output is returned to the Planner for correction. Builder reads only its implementation plan, while Tester reads only its scenario checklist and clears its conditions through passing verification. Normal workflow cleanup preserves both plans for inspection.
+
+`/pbr <request>` runs Plan → Builder-owned TDD → Reviewer. `/dpbr <request>` is the design-review counterpart. Their Planner writes one Builder plan with a non-empty `## Acceptance Criteria` section; the Builder creates/updates and verifies tests without committing. The read-only, plan-only Reviewer evaluates the Git diff, acceptance criteria, test coverage, and every required quality command. It returns defects only to the Builder; once all checks pass, it makes the final commit through a narrowly scoped stage/commit exception. The orchestrator then reruns the required quality commands and verifies that commit before completion.
 
 For small, direct changes use `/b <request>`. Just-build skips planning and
 separate test authoring/verification: one persistent Builder implements the

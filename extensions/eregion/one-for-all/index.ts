@@ -30,6 +30,7 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import { MAX_ITERATIONS, RUNS_DIR } from "./constants.js";
 import { runWorkflow } from "./orchestrator.js";
+import { runReviewWorkflow } from "./review-orchestrator.js";
 import { isJustBuildState, runBuildWorkflow } from "./build-orchestrator.js";
 import { buildFinalReport, deliverWorkflowOutput } from "./report.js";
 import { cleanupRunResources } from "./cleanup.js";
@@ -252,6 +253,10 @@ export default function oneForAllExtension(pi: ExtensionAPI) {
 			await runBuildWorkflow(pi, ctx, request, definition.maxIterations, undefined, undefined, false, definition.id, definition.models, documentationRequested, definition.efforts);
 			return;
 		}
+		if (definition.runner === "pbr" || definition.runner === "dpbr") {
+			await runReviewWorkflow(pi, ctx, request, definition.interactive, definition.maxIterations, undefined, undefined, definition.id, definition.runner === "dpbr", definition.models, definition.efforts);
+			return;
+		}
 		await runWorkflow(pi, ctx, request, definition.interactive, definition.maxIterations, undefined, undefined, false, definition.id, definition.runner === "dpbt", definition.models, documentationRequested, definition.efforts);
 	}
 
@@ -300,6 +305,16 @@ export default function oneForAllExtension(pi: ExtensionAPI) {
 		await startDefinition(definition, parsed.request, ctx, parsed.documentationRequested);
 	}
 
+	async function startReviewCommand(workflow: "pbr" | "dpbr", args: string, ctx: ExtensionCommandContext): Promise<void> {
+		const parsed = parseStartFlags(args, true);
+		const definition = resolveWorkflow(ctx.cwd, workflow, parsed.interactive);
+		if (!parsed.valid || !parsed.request || !definition) {
+			ctx.ui.notify(`Usage: /${workflow} [--interactive] <request>`, "warning");
+			return;
+		}
+		await startDefinition(definition, parsed.request, ctx, false);
+	}
+
 	async function startGenericCommand(args: string, ctx: ExtensionCommandContext): Promise<void> {
 		const parts = args.trim().split(/\s+/).filter(Boolean);
 		const workflowId = parts.shift();
@@ -330,6 +345,16 @@ export default function oneForAllExtension(pi: ExtensionAPI) {
 	pi.registerCommand("dpbt", {
 		description: "Run Design → Plan → Build → Test with explicit mockup approval; --interactive asks design questions first; --docs adds a Docs-agent phase",
 		handler: startDpbtCommand,
+	});
+
+	pi.registerCommand("pbr", {
+		description: "Run Plan → Builder-owned TDD → read-only Reviewer; --interactive asks planner questions",
+		handler: (args, ctx) => startReviewCommand("pbr", args, ctx),
+	});
+
+	pi.registerCommand("dpbr", {
+		description: "Run Design → Plan → Builder-owned TDD → read-only Reviewer; --interactive asks design questions",
+		handler: (args, ctx) => startReviewCommand("dpbr", args, ctx),
 	});
 
 	pi.registerCommand("doc", {
@@ -631,34 +656,10 @@ export default function oneForAllExtension(pi: ExtensionAPI) {
 			const definition = resolveWorkflow(ctx.cwd, params.workflow, params.interactive ?? false);
 			if (!definition) return { content: [{ type: "text", text: `Unknown workflow. Available: ${loadWorkflowDefinitions(ctx.cwd).map((item) => item.id).join(", ")}` }], details: {} };
 			const state = definition.runner === "build"
-				? await runBuildWorkflow(
-					pi,
-					ctx,
-					params.request,
-					params.maxIterations ?? definition.maxIterations,
-					signal,
-					undefined,
-					false,
-					definition.id,
-					definition.models,
-					params.docs ?? params.doc ?? false,
-					definition.efforts,
-				)
-				: await runWorkflow(
-					pi,
-					ctx,
-					params.request,
-					definition.interactive,
-					params.maxIterations ?? definition.maxIterations,
-					signal,
-					undefined,
-					false,
-					definition.id,
-					definition.runner === "dpbt",
-					definition.models,
-					params.docs ?? params.doc ?? false,
-					definition.efforts,
-				);
+				? await runBuildWorkflow(pi, ctx, params.request, params.maxIterations ?? definition.maxIterations, signal, undefined, false, definition.id, definition.models, params.docs ?? params.doc ?? false, definition.efforts)
+				: definition.runner === "pbr" || definition.runner === "dpbr"
+					? await runReviewWorkflow(pi, ctx, params.request, definition.interactive, params.maxIterations ?? definition.maxIterations, signal, undefined, definition.id, definition.runner === "dpbr", definition.models, definition.efforts)
+					: await runWorkflow(pi, ctx, params.request, definition.interactive, params.maxIterations ?? definition.maxIterations, signal, undefined, false, definition.id, definition.runner === "dpbt", definition.models, params.docs ?? params.doc ?? false, definition.efforts);
 			return {
 				content: [{ type: "text", text: buildFinalReport(state) }],
 				details: state,

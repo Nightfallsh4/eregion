@@ -57,6 +57,8 @@ conversation:
   redundant documentation when appropriate. Use `/doc` to run the same
   maintenance work visibly in the current Pi session without a workflow.
   `--doc` remains a backwards-compatible alias for `--docs`.
+- `/pbr <request>` — Plan → Builder-owned TDD → Reviewer. The Planner writes one Builder plan whose non-empty `## Acceptance Criteria` section is enforced by the orchestrator. The Builder writes and verifies tests but never commits. A plan-only Reviewer checks the Git diff, criteria, test coverage, code quality, and all required quality commands; it routes every defect to the Builder and makes the final commit only after passing review. The orchestrator reruns required quality checks and verifies that commit.
+- `/dpbr <request>` — DPBT's existing design/mockup approval flow followed by the PBR Builder/Reviewer lifecycle. Add `--interactive` for design clarification rounds.
 - `/b <request>` — just-build for a focused, simpler task. It has one
   persistent Builder phase and no plan, design, tester, or test-verification
   phase. After the Builder handoff, the orchestrator programmatically runs
