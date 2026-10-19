@@ -332,11 +332,14 @@ test("headless reports retain stdout output and complete persisted diagnostics",
 	assert.equal(listStates(cwd)[0].failureReason, diagnostics);
 });
 
-test("registers direct PBR and DPBR commands", () => {
+test("registers direct PBR and DPBR commands with parity lifecycle controls", () => {
 	const { pi, commands } = makeAPI();
 	oneForAllExtension(pi);
-	assert.ok(commands.has("pbr"));
-	assert.ok(commands.has("dpbr"));
+	for (const prefix of ["pbr", "dpbr"]) {
+		for (const command of [prefix, `${prefix}-resume`, `${prefix}-stop`, `${prefix}-status`, `${prefix}-inspect`, `${prefix}-cleanup`]) {
+			assert.ok(commands.has(command), `/${command} is registered`);
+		}
+	}
 });
 
 test("/pbt-lint-setup starts a visible, current-session quality-profile setup turn", async (t) => {

@@ -203,6 +203,25 @@ export default function oneForAllExtension(pi: ExtensionAPI) {
 		return entry ? { runId: entry[0], active: entry[1] } : undefined;
 	}
 
+	function reviewStateForArgument(cwd: string, workflow: "pbr" | "dpbr", runId?: string): NonNullable<ReturnType<typeof loadState>> | null {
+		const matches = (state: WorkflowState) => state.workflowName === workflow || state.workflowId === workflow;
+		if (runId) {
+			const state = loadState(cwd, runId);
+			return state && matches(state) ? state : null;
+		}
+		return [...activeRuns.values()].map((control) => control.state).reverse().find(matches) || listStates(cwd).find(matches) || null;
+	}
+
+	function activeReviewRun(workflow: "pbr" | "dpbr", runId?: string): { runId: string; active: NonNullable<ReturnType<typeof activeRuns.get>> } | undefined {
+		const matches = (state: WorkflowState) => state.workflowName === workflow || state.workflowId === workflow;
+		if (runId) {
+			const active = activeRuns.get(runId);
+			return active && matches(active.state) ? { runId, active } : undefined;
+		}
+		const entry = [...activeRuns.entries()].reverse().find(([, active]) => matches(active.state));
+		return entry ? { runId: entry[0], active: entry[1] } : undefined;
+	}
+
 	function stateSignature(state: ReturnType<typeof loadState>): string {
 		if (!state) return "missing";
 		return JSON.stringify({
@@ -356,6 +375,35 @@ export default function oneForAllExtension(pi: ExtensionAPI) {
 		description: "Run Design → Plan → Builder-owned TDD → read-only Reviewer; --interactive asks design questions",
 		handler: (args, ctx) => startReviewCommand("dpbr", args, ctx),
 	});
+
+	for (const workflow of ["pbr", "dpbr"] as const) {
+		pi.registerCommand(`${workflow}-resume`, {
+			description: `Resume a stopped ${workflow.toUpperCase()} run in its persistent Builder/Reviewer sessions`,
+			handler: async (args, ctx) => {
+				const state = reviewStateForArgument(ctx.cwd, workflow, args.trim() || undefined);
+				if (!state || !isResumableState(state)) { ctx.ui.notify(`No resumable ${workflow.toUpperCase()} run found.`, "warning"); return; }
+				if (activeRuns.has(state.runId)) { ctx.ui.notify(`${state.runId} is already running.`, "warning"); return; }
+				const definition = resolveWorkflow(ctx.cwd, state.workflowId || workflow);
+				await runReviewWorkflow(pi, ctx, state.request, state.interactive, state.maxIterations, undefined, state, state.workflowId || workflow, workflow === "dpbr", definition?.models, definition?.efforts);
+			},
+		});
+		pi.registerCommand(`${workflow}-status`, {
+			description: `Show ${workflow.toUpperCase()} review progress and handoffs`,
+			handler: async (args, ctx) => { const state = reviewStateForArgument(ctx.cwd, workflow, args.trim() || undefined); if (!state) { ctx.ui.notify(`No ${workflow.toUpperCase()} runs found.`, "info"); return; } deliverWorkflowOutput(pi, ctx, inspectState(state, ctx.cwd, 30)); updateUI(ctx, state); },
+		});
+		pi.registerCommand(`${workflow}-inspect`, {
+			description: `Show recent ${workflow.toUpperCase()} activity`,
+			handler: async (args, ctx) => { const [runId, rawLimit] = args.trim().split(/\s+/); const state = reviewStateForArgument(ctx.cwd, workflow, runId || undefined); if (!state) { ctx.ui.notify(`No ${workflow.toUpperCase()} runs found.`, "info"); return; } deliverWorkflowOutput(pi, ctx, inspectState(state, ctx.cwd, Number(rawLimit) || 40)); updateUI(ctx, state); },
+		});
+		pi.registerCommand(`${workflow}-stop`, {
+			description: `Abort an active ${workflow.toUpperCase()} run`,
+			handler: async (args, ctx) => { const entry = activeReviewRun(workflow, args.trim() || undefined); if (!entry) { ctx.ui.notify(`No active ${workflow.toUpperCase()} runs.`, "info"); return; } entry.active.state.status = "aborted"; entry.active.state.stopReason = "aborted"; entry.active.state.failureReason = "Stopped by user"; saveState(ctx.cwd, entry.active.state, pi); entry.active.controller.abort(); updateUI(ctx, entry.active.state); },
+		});
+		pi.registerCommand(`${workflow}-cleanup`, {
+			description: `Close ${workflow.toUpperCase()} tabs and remove its persistent sessions`,
+			handler: async (args, ctx) => { const state = reviewStateForArgument(ctx.cwd, workflow, args.trim() || undefined); if (!state) { ctx.ui.notify(`No ${workflow.toUpperCase()} runs found.`, "info"); return; } if (activeRuns.has(state.runId)) { ctx.ui.notify(`${state.runId} is still running; stop it before cleanup.`, "warning"); return; } const result = await cleanupRunResources(ctx.cwd, state); ctx.ui.notify(`Cleaned ${workflow.toUpperCase()} ${state.runId}: closed ${result.tabsClosed} tab(s), removed ${result.sessionsRemoved} session(s).`, result.warnings.length ? "warning" : "info"); },
+		});
+	}
 
 	pi.registerCommand("doc", {
 		description: "Start visible documentation maintenance in this Pi session",
