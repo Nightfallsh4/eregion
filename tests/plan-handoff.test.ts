@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { validatePlanHandoff } from "../extensions/eregion/one-for-all/handoffs.js";
+import { validatePlanHandoff, validateReviewPlanHandoff } from "../extensions/eregion/one-for-all/handoffs.js";
 import { buildPlanRecoveryTask, buildPlanTask } from "../extensions/eregion/one-for-all/prompts.js";
 import type { PhaseHandoff, PlanPaths } from "../extensions/eregion/one-for-all/types.js";
 
@@ -31,6 +31,18 @@ test("validates the exact paired plan paths in a planner handoff", () => {
 	assert.throws(() => validatePlanHandoff(handoff({ builderPlanPath: undefined }), paths), /builderPlanPath/i);
 	assert.throws(() => validatePlanHandoff(handoff({ builderPlanPath: paths.testerPlanPath, testerPlanPath: paths.builderPlanPath }), paths), /exact/i);
 	assert.throws(() => validatePlanHandoff(handoff({ artifacts: [] }), paths), /artifact/i);
+});
+
+test("requires a single review-workflow plan handoff with acceptance criteria", () => {
+	const reviewPlanPath = "acache/plans/plan-feature.md";
+	const reviewHandoff = handoff({
+		artifacts: [{ path: reviewPlanPath, description: "Builder plan", action: "created" }],
+		builderPlanPath: reviewPlanPath,
+		testerPlanPath: undefined,
+	});
+	assert.doesNotThrow(() => validateReviewPlanHandoff(reviewHandoff, reviewPlanPath));
+	assert.throws(() => validateReviewPlanHandoff(reviewHandoff, "acache/plans/other.md"), /exact/i);
+	assert.throws(() => validateReviewPlanHandoff({ ...reviewHandoff, artifacts: [] }, reviewPlanPath), /artifact/i);
 });
 
 test("planner tasks require only the two role-specific files and support recovery", () => {

@@ -94,6 +94,22 @@ export function assertPlanExists(cwd: string, planPath: string): void {
 	}
 }
 
+/** Verify a review-workflow plan has actionable Markdown acceptance criteria. */
+export function assertAcceptanceCriteria(cwd: string, planPath: string): void {
+	assertPlanExists(cwd, planPath);
+	const contents = fs.readFileSync(path.resolve(cwd, planPath), "utf8");
+	const heading = /^##\s+Acceptance Criteria\s*$/im.exec(contents);
+	if (!heading || heading.index === undefined) {
+		throw new Error(`Review plan must contain a non-empty Acceptance Criteria section: ${planPath}`);
+	}
+	const body = contents.slice(heading.index + heading[0].length).split(/^##\s+/m, 1)[0];
+	const meaningful = body
+		.split("\n")
+		.map((line) => line.replace(/<!--.*?-->/g, "").trim())
+		.some((line) => line.length > 0 && !/^<!--/.test(line));
+	if (!meaningful) throw new Error(`Review plan must contain a non-empty Acceptance Criteria section: ${planPath}`);
+}
+
 /** Verify both reserved role plans are distinct, safe, regular, and populated. */
 export function assertPlanOutputsExist(cwd: string, paths: PlanPaths): void {
 	if (paths.builderPlanPath === paths.testerPlanPath) {

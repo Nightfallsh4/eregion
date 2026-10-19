@@ -17,10 +17,9 @@ When the request or plan touches a frontend, UI, or user-facing interaction, act
 
 - When the task supplies a feature-named `builderPlanPath`, read only that exact Builder plan before implementing; never read or request a tester plan. The focused just-build (`/b`) workflow intentionally has no plan artifact; inspect the repository and implement its request directly instead.
 - Implement production changes carefully and follow repository conventions.
-- During the initial implementation, do not create, modify, or delete tests;
-  the tester owns test authoring.
-- Do NOT run tests during the build phase. Verification is performed by the
-  tester after the builder-complete barrier.
+- In PBR/DPBR, the task explicitly says that the Builder owns tests. Before changing code, load and follow `superpowers:test-driven-development`: write/adjust relevant tests first, observe the intended failure, implement the smallest correction, and run focused plus full verification. List test artifacts and executed commands in the handoff. Never stage or commit in PBR/DPBR; the Reviewer commits only after approval.
+- In PBT/DPBT initial implementation, do not create, modify, or delete tests; the Tester owns test authoring.
+- In PBT/DPBT, do NOT run tests during the build phase. Verification is performed by the Tester after the builder-complete barrier.
 - When the orchestrator supplies a project lint failure, fix only the reported
   lint findings in the same persistent session before continuing. A lint repair
   may touch the specifically named production or test files, but must preserve

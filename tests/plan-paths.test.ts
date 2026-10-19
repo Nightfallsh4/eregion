@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { releasePlanReservations, reservePlanPaths } from "../extensions/eregion/one-for-all/plan-paths.js";
-import { assertPlanOutputsExist } from "../extensions/eregion/one-for-all/state.js";
+import { releasePlanReservations, reservePlanPath, reservePlanPaths } from "../extensions/eregion/one-for-all/plan-paths.js";
+import { assertAcceptanceCriteria, assertPlanOutputsExist } from "../extensions/eregion/one-for-all/state.js";
 import type { PlanPaths } from "../extensions/eregion/one-for-all/types.js";
 
 function temporaryProject(t: { after(fn: () => void): void }): string {
@@ -45,6 +45,26 @@ test("reserves collision-safe builder and tester plan paths as one pair", (t) =>
 	releasePlanReservations(cwd, second);
 	const recycled = reservePlanPaths(cwd, "Build account settings");
 	assert.deepEqual(recycled, first);
+});
+
+test("reserves a single collision-safe plan for review workflows", (t) => {
+	const cwd = temporaryProject(t);
+	const first = reservePlanPath(cwd, "Build account settings");
+	assert.equal(first, "acache/plans/plan-account-settings.md");
+	const second = reservePlanPath(cwd, "Build account settings");
+	assert.equal(second, "acache/plans/plan-account-settings-2.md");
+});
+
+test("requires a non-empty Acceptance Criteria section in a review plan", (t) => {
+	const cwd = temporaryProject(t);
+	const planPath = reservePlanPath(cwd, "Build profiles");
+	const absolute = path.join(cwd, planPath);
+	fs.writeFileSync(absolute, "# Plan\n\n## Acceptance Criteria\n\n");
+	assert.throws(() => assertAcceptanceCriteria(cwd, planPath), /non-empty.*Acceptance Criteria/i);
+	fs.writeFileSync(absolute, "# Plan\n\n## Acceptance Criteria\n\n- Profiles save successfully.\n");
+	assert.doesNotThrow(() => assertAcceptanceCriteria(cwd, planPath));
+	fs.writeFileSync(absolute, "# Plan\n\n## Constraints\n\n- Keep API stable.\n");
+	assert.throws(() => assertAcceptanceCriteria(cwd, planPath), /Acceptance Criteria/i);
 });
 
 test("accepts only distinct non-empty plan files in acache/plans", (t) => {

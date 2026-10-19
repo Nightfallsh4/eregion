@@ -443,6 +443,16 @@ export function validatePlanHandoff(handoff: PhaseHandoff, paths: PlanPaths): vo
 	}
 }
 
+/** Validate the single Builder plan used by PBR and DPBR. */
+export function validateReviewPlanHandoff(handoff: PhaseHandoff, planPath: string): void {
+	if (handoff.phase !== "plan") throw new Error("Plan handoff must declare phase=plan");
+	if (!handoff.builderPlanPath) throw new Error("Review plan handoff must include builderPlanPath");
+	if (handoff.builderPlanPath !== planPath) throw new Error("Review plan handoff must report the exact reserved builder path");
+	if (!handoff.artifacts.some((artifact) => artifact.path === planPath && artifact.action === "created")) {
+		throw new Error(`Review plan handoff must list created artifact ${planPath}`);
+	}
+}
+
 export function validateAuthoringHandoff(handoff: PhaseHandoff): void {
 	if (handoff.testStage !== "authoring") throw new Error("Tester authoring handoff must declare testStage=authoring");
 	if (!handoff.testStrategy) throw new Error("Tester authoring handoff must include a testStrategy");

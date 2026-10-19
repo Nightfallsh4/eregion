@@ -134,6 +134,19 @@ export function buildInitialBuildTask(request: string, builderPlanPath: string, 
 	].join("\n\n");
 }
 
+/** Initial Builder turn for PBR/DPBR: the Builder owns tests through TDD. */
+export function buildReviewBuildTask(request: string, builderPlanPath: string, planHandoff: PhaseHandoff, iteration: number): string {
+	return [
+		`Implement the reviewed plan for this request: ${request}`,
+		`Read the Builder plan at ${builderPlanPath}. Build iteration ${iteration}.`,
+		`Plan context: ${renderPlanContext(planHandoff)}`,
+		"Before changing code, load and follow superpowers:test-driven-development. Create or update all relevant tests: write a failing test, observe RED, implement the smallest change, then run the relevant and full tests through GREEN.",
+		"Record every production and test artifact plus the commands and outcomes used for verification. Do not rely on a separate Tester agent.",
+		"Do not stage or commit changes; final staging and commit are exclusively the Reviewer’s responsibility after approval.",
+		handoffRule,
+	].join("\n\n");
+}
+
 /** One issue only. The issue ID and all diagnostic fields are one atomic block. */
 export function buildIssueFixTask(issue: TestIssue, iteration: number): string {
 	return [
