@@ -1,11 +1,23 @@
 ---
 name: using-worktrunk
-description: Use when creating, entering, inspecting, merging, or removing Git worktrees, or when a task needs an isolated workspace and Worktrunk (`wt`) is available.
+description: Use when beginning feature development, updates, refactors, or other considerable changes; when a task needs an isolated workspace; or when creating, entering, inspecting, merging, or removing Git worktrees with Worktrunk (`wt`).
 ---
 
 # Using Worktrunk
 
 Worktrunk is the required native worktree tool. When `wt` is available, this fulfils the native-tool step of `superpowers:using-git-worktrees`; do not use raw `git worktree` commands instead.
+
+## Mandatory trigger for implementation work
+
+Before making implementation changes, use this skill for:
+
+- any feature development;
+- any update or maintenance change;
+- any refactor;
+- any other considerable change; and
+- any task that creates, enters, inspects, merges, or removes a Git worktree.
+
+Using this skill does **not** automatically create a new worktree: first run the preflight, then reuse an existing isolated workspace or create one with Worktrunk when isolation is needed. Do this before editing files, running implementation commands, or delegating implementation work. Do not wait for the request to say “worktree”; feature, update, refactor, and considerable-change requests are themselves triggers.
 
 ## Preflight
 

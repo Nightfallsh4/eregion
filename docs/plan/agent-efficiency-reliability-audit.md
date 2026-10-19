@@ -338,7 +338,6 @@ More consistent decisions across runs, fewer repeated investigations, and lower 
   - Planner: reserved non-empty plans and affected file/test list.
   - Builder: validated diff and changed-file manifest.
   - Tester: orchestrator-captured command results.
-  - Reviewer: acceptance-criteria traceability.
 - Apply sensible field-size bounds to avoid excessive state and prompt payloads.
 
 ---
